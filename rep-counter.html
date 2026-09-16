@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dawn — rep counter prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#0B1026;
+    --horizon:#1E2A4F;
+    --ember:#FF6B35;
+    --gold:#FFC15E;
+    --signal:#4ECDC4;
+    --text:#E8ECF7;
+    --dim:#8794B5;
+    --danger:#FF5C7A;
+    --font:'Archivo','Helvetica Neue',Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--font);
+    background:var(--night);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* Intentionally dark in every theme: this is a 6am alarm screen.
+     Explicit background so it never inherits a light viewer surface. */
+  #dawn{
+    position:fixed;inset:0;z-index:0;
+    background:linear-gradient(180deg,var(--night) 0%,var(--horizon) 100%);
+    transition:opacity .6s linear;
+  }
+  #dawnWarm{
+    position:fixed;inset:0;z-index:0;opacity:0;
+    background:linear-gradient(180deg,#2A1B3D 0%,#6B3A5B 45%,var(--ember) 78%,var(--gold) 100%);
+    transition:opacity .5s linear;
+  }
+  @media (prefers-reduced-motion:reduce){
+    #dawn,#dawnWarm{transition:none}
+  }
+  .wrap{
+    position:relative;z-index:1;
+    min-height:100%;
+    display:flex;flex-direction:column;
+    padding:clamp(20px,5vw,40px);
+    max-width:640px;margin:0 auto;
+  }
+  .screen{display:none;flex:1;flex-direction:column}
+  .screen.on{display:flex}
+
+  h1{
+    font-size:clamp(28px,7vw,40px);
+    font-weight:800;letter-spacing:-.03em;line-height:1.05;
+    margin-bottom:10px;
+  }
+  .lede{color:var(--dim);font-size:16px;line-height:1.55;max-width:46ch;margin-bottom:28px}
+  .note{color:var(--dim);font-size:14px;line-height:1.5;max-width:52ch}
+
+  button{
+    font-family:var(--font);font-size:17px;font-weight:600;
+    border:none;border-radius:14px;padding:16px 22px;
+    background:var(--ember);color:#160B05;cursor:pointer;
+    min-height:56px;width:100%;
+  }
+  button:focus-visible{outline:3px solid var(--signal);outline-offset:3px}
+  button.ghost{background:transparent;color:var(--text);border:1.5px solid #33406B}
+  button.quiet{background:transparent;color:var(--dim);border:none;font-weight:400;
+    font-size:15px;text-decoration:underline;min-height:44px;padding:10px}
+  .row{display:flex;gap:12px;margin-top:14px}
+
+  .goal{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+  .goal label{color:var(--dim);font-size:15px}
+  .stepper{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .stepper button{width:52px;min-height:52px;padding:0;font-size:24px;background:#1B2545;color:var(--text)}
+  .stepper .val{
+    font-size:30px;font-weight:800;min-width:60px;text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* counting screen */
+  .count{
+    font-size:clamp(120px,40vw,220px);
+    font-weight:800;line-height:.85;letter-spacing:-.05em;
+    font-variant-numeric:tabular-nums;
+    text-align:center;margin:auto 0 0;
+  }
+  .countSub{text-align:center;color:var(--dim);font-size:18px;margin:12px 0 auto;letter-spacing:.01em}
+  .flash{animation:pop .28s ease-out}
+  @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.09)}100%{transform:scale(1)}}
+  @media (prefers-reduced-motion:reduce){.flash{animation:none}}
+
+  .scope{
+    border:1.5px solid #2B3763;border-radius:16px;
+    padding:14px;background:rgba(11,16,38,.55);margin-top:18px;
+  }
+  .scopeHead{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+  .scopeHead span{font-size:14px;color:var(--dim)}
+  .scopeHead .state{margin-left:auto;font-weight:600;color:var(--signal);font-size:14px}
+  canvas#trace{width:100%;height:84px;display:block}
+  #preview{
+    position:fixed;top:14px;right:14px;z-index:5;
+    width:84px;height:112px;border-radius:12px;overflow:hidden;
+    background:#000;border:1.5px solid #2B3763;display:none;
+  }
+  #preview.on{display:block}
+  #cam{width:100%;height:100%;object-fit:cover;display:block;transform:scaleX(-1)}
+  .banner{
+    background:rgba(78,205,196,.12);border:1.5px solid var(--signal);
+    border-radius:12px;padding:13px 15px;margin-bottom:22px;
+    font-size:15px;line-height:1.5;color:#CFF5F1;
+  }
+  .banner.hide{display:none}
+
+  .warn{
+    background:rgba(255,92,122,.13);border:1.5px solid var(--danger);
+    border-radius:12px;padding:12px 14px;margin-top:14px;
+    font-size:15px;line-height:1.5;color:#FFD3DC;
+  }
+  .warn.hide{display:none}
+
+  .escape{margin-top:18px;text-align:center}
+  .sheet{
+    position:fixed;inset:auto 0 0 0;z-index:10;
+    background:#141C38;border-radius:20px 20px 0 0;
+    padding:26px clamp(20px,5vw,32px) 32px;
+    max-width:640px;margin:0 auto;
+    transform:translateY(100%);transition:transform .25s ease-out;
+  }
+  .sheet.on{transform:translateY(0)}
+  @media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+  .sheet h2{font-size:22px;font-weight:800;margin-bottom:8px;letter-spacing:-.02em}
+  .sheet p{color:var(--dim);font-size:15px;line-height:1.55;margin-bottom:20px}
+  .sheet button{margin-bottom:10px}
+
+  .done{margin:auto 0;text-align:center}
+  .done .big{font-size:clamp(40px,11vw,64px);font-weight:800;letter-spacing:-.03em;line-height:1.05}
+  .done p{color:#3A2410;font-size:18px;margin-top:14px}
+  .done.warm .big{color:#160B05}
+</style>
+</head>
+<body>
+<div id="dawn"></div>
+<div id="dawnWarm"></div>
+<div id="preview"><video id="cam" playsinline muted autoplay></video></div>
+
+<div class="wrap">
+
+  <!-- SETUP -->
+  <section class="screen on" id="sSetup">
+    <div class="banner hide" id="embedWarn">
+      This page is running inside another page, which blocks the camera no matter what you tap.
+      Open the artifact link in Safari or Chrome directly and it will work.
+    </div>
+    <h1>How many push-ups to turn the alarm off?</h1>
+    <p class="lede">Prop your phone against something so it can see you from the side or the front. You'll do two slow practice reps first so it learns what you look like moving.</p>
+
+    <div class="goal">
+      <label for="goalVal">Reps</label>
+      <div class="stepper">
+        <button id="minus" aria-label="Fewer reps">−</button>
+        <div class="val" id="goalVal">10</div>
+        <button id="plus" aria-label="More reps">+</button>
+      </div>
+    </div>
+
+    <div style="margin-top:auto">
+      <button id="startBtn">Turn on the camera</button>
+      <button class="ghost" id="demoBtn" style="margin-top:12px">Watch it count without a camera</button>
+      <p class="note" style="margin-top:16px">Everything runs on your phone. No video leaves the device and nothing is recorded.</p>
+    </div>
+  </section>
+
+  <!-- CALIBRATE -->
+  <section class="screen" id="sCal">
+    <h1 id="calTitle">Do two slow push-ups</h1>
+    <p class="lede" id="calLede">Go all the way down and all the way up. Take your time — this is just so it can see your range.</p>
+    <div class="count" id="calTimer">6</div>
+    <div class="countSub">seconds left</div>
+    <div class="scope">
+      <div class="scopeHead"><span>What the camera sees</span><span class="state" id="calState">watching</span></div>
+      <canvas id="traceCal" width="600" height="168"></canvas>
+    </div>
+    <div class="escape"><button class="quiet" id="skipCal">Skip this and use a timer instead</button></div>
+  </section>
+
+  <!-- COUNTING -->
+  <section class="screen" id="sCount">
+    <div class="count" id="countVal">0</div>
+    <div class="countSub" id="countSub">of 10</div>
+
+    <div class="scope">
+      <div class="scopeHead"><span>What the camera sees</span><span class="state" id="liveState">up</span></div>
+      <canvas id="trace" width="600" height="168"></canvas>
+    </div>
+
+    <div class="warn hide" id="stallWarn">
+      Not picking up much movement. Move your phone back so more of your body is in frame, or tap below to switch.
+    </div>
+
+    <div class="escape">
+      <button class="quiet" id="notWorking">It's not counting me</button>
+    </div>
+  </section>
+
+  <!-- DONE -->
+  <section class="screen" id="sDone">
+    <div class="done warm">
+      <div class="big" id="doneBig">Alarm off.</div>
+      <p id="doneSub">You're up.</p>
+    </div>
+    <div style="margin-top:auto">
+      <button id="againBtn">Run it again</button>
+    </div>
+  </section>
+</div>
+
+<!-- escape hatch sheet -->
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <h2 id="sheetTitle">Let's get you out of this</h2>
+  <p>You should never be stuck doing reps a broken counter won't accept.</p>
+  <button id="recal">Recalibrate — I'll do two more slow reps</button>
+  <button class="ghost" id="toTimer">Switch to a 30-second hold instead</button>
+  <button class="ghost" id="bail">Just turn the alarm off</button>
+  <button class="quiet" id="closeSheet">Go back</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var video   = document.getElementById('cam');
+  var screens = {setup:s('sSetup'), cal:s('sCal'), count:s('sCount'), done:s('sDone')};
+  function s(id){ return document.getElementById(id); }
+  function show(name){
+    for (var k in screens) screens[k].classList.toggle('on', k===name);
+  }
+
+  // ---- tunables -------------------------------------------------------
+  var GRID_W = 48, GRID_H = 36;     // downsampled analysis resolution
+  var HIST    = 150;                // samples kept for the trace (~5s)
+  var LOW     = 0.35, HIGH = 0.65;  // hysteresis thresholds (normalised)
+  var MIN_REP_MS = 450;             // reject jitter / double counts
+  var MIN_RANGE  = 4.0;             // min luminance swing to trust the signal
+  var STALL_MS   = 12000;           // warn if nothing counted for this long
+
+  // ---- state ----------------------------------------------------------
+  var goal = 10, count = 0, phase = 'up', lastRepAt = 0, lastProgressAt = 0;
+  var loMark = Infinity, hiMark = -Infinity;   // calibrated luminance range
+  var samples = [], marks = [];                // trace data
+  var running = false, mode = 'reps', rafId = null, stream = null;
+
+  var work = document.createElement('canvas');
+  work.width = GRID_W; work.height = GRID_H;
+  var wctx = work.getContext('2d', {willReadFrequently:true});
+
+  // ---- goal stepper ---------------------------------------------------
+  var goalVal = s('goalVal');
+  try { var saved = localStorage.getItem('dawn.goal'); if (saved) goal = Math.max(1, Math.min(50, +saved||10)); } catch(e){}
+  goalVal.textContent = goal;
+  s('plus').onclick  = function(){ goal = Math.min(50, goal+1); goalVal.textContent = goal; persist(); };
+  s('minus').onclick = function(){ goal = Math.max(1, goal-1); goalVal.textContent = goal; persist(); };
+  function persist(){ try { localStorage.setItem('dawn.goal', goal); } catch(e){} }
+
+  // ---- camera ---------------------------------------------------------
+  var preview = s('preview'), embedWarn = s('embedWarn'), demo = false, demoT = 0;
+
+  var embedded = false;
+  try { embedded = window.self !== window.top; } catch(e){ embedded = true; }
+  if (embedded) embedWarn.classList.remove('hide');
+
+  function cameraFailure(err){
+    var name = (err && err.name) ? err.name : 'unknown';
+    var msg;
+    if (name === 'NotAllowedError' && embedded){
+      msg = 'Blocked because this page is embedded in another page \u2014 the camera request never reached you. ' +
+            'Open the artifact link directly in Safari or Chrome.';
+    } else if (name === 'NotAllowedError'){
+      msg = 'Camera permission was denied. In Safari: aA icon in the address bar \u2192 Website Settings \u2192 Camera \u2192 Allow, then reload.';
+    } else if (name === 'NotFoundError' || name === 'OverconstrainedError'){
+      msg = 'No usable camera found on this device.';
+    } else if (name === 'NotReadableError'){
+      msg = 'Another app is holding the camera. Close it and reload.';
+    } else if (!navigator.mediaDevices){
+      msg = 'This browser will not expose a camera here (it needs a secure, non-embedded page).';
+    } else {
+      msg = 'The camera did not open (' + name + ').';
+    }
+    var box = s('camErr');
+    if (!box){
+      box = document.createElement('div');
+      box.className = 'warn'; box.id = 'camErr';
+      box.style.marginTop = '14px';
+      s('startBtn').parentNode.insertBefore(box, s('startBtn').nextSibling);
+    }
+    box.textContent = msg + ' You can still tap below to watch the counter run on a simulated signal.';
+  }
+
+  s('startBtn').onclick = function(){
+    var btn = this; btn.disabled = true; btn.textContent = 'Asking for the camera\u2026';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      btn.disabled = false; btn.textContent = 'Turn on the camera';
+      cameraFailure({name:'NotSupported'}); return;
+    }
+    navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ideal:640} }, audio:false })
+      .then(function(st){ stream = st; video.srcObject = st; return video.play(); })
+      .then(function(){
+        btn.disabled=false; btn.textContent='Turn on the camera';
+        var e = s('camErr'); if (e) e.remove();
+        preview.classList.add('on');
+        demo = false;
+        startCalibration();
+      })
+      .catch(function(err){
+        btn.disabled = false; btn.textContent = 'Turn on the camera';
+        cameraFailure(err);
+      });
+  };
+
+  s('demoBtn').onclick = function(){
+    demo = true; demoT = 0;
+    preview.classList.remove('on');
+    startCalibration();
+  };
+
+  // ---- luminance sampling --------------------------------------------
+  function sampleLuma(){
+    if (demo){
+      demoT += 0.045;
+      return 128 + 40*Math.sin(demoT) + (Math.random()*4 - 2);
+    }
+    if (!video.videoWidth) return null;
+    wctx.drawImage(video, 0, 0, GRID_W, GRID_H);
+    var d = wctx.getImageData(0, 0, GRID_W, GRID_H).data;
+    // centre band only: the body fills the middle, edges are background
+    var y0 = (GRID_H*0.2)|0, y1 = (GRID_H*0.8)|0;
+    var sum = 0, n = 0;
+    for (var y=y0; y<y1; y++){
+      for (var x=0; x<GRID_W; x++){
+        var i = (y*GRID_W + x)*4;
+        sum += 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+        n++;
+      }
+    }
+    return sum/n;
+  }
+
+  function pushSample(v){
+    samples.push(v); marks.push(false);
+    if (samples.length > HIST){ samples.shift(); marks.shift(); }
+  }
+
+  function normalise(v){
+    var range = hiMark - loMark;
+    if (range < 0.0001) return 0.5;
+    return Math.max(0, Math.min(1, (v - loMark) / range));
+  }
+
+  // ---- calibration ----------------------------------------------------
+  var calEnd = 0, calTimerEl = s('calTimer'), calStateEl = s('calState');
+
+  function startCalibration(){
+    loMark = Infinity; hiMark = -Infinity;
+    samples = []; marks = [];
+    calEnd = performance.now() + 6000;
+    show('cal');
+    running = true;
+    loop();
+  }
+
+  function calFrame(now){
+    var v = sampleLuma();
+    if (v !== null){
+      if (v < loMark) loMark = v;
+      if (v > hiMark) hiMark = v;
+      pushSample(v);
+    }
+    var left = Math.max(0, Math.ceil((calEnd - now)/1000));
+    calTimerEl.textContent = left;
+    calStateEl.textContent = (hiMark - loMark).toFixed(1) + ' range';
+    drawTrace(document.getElementById('traceCal'), true);
+
+    if (now >= calEnd){
+      var range = hiMark - loMark;
+      if (range < MIN_RANGE){
+        // Tell them NOW, not after 30 uncounted reps.
+        s('calTitle').textContent = 'It can\u2019t see enough movement';
+        s('calLede').textContent  = 'Move the phone further back so more of your body is in frame, then try the practice reps again.';
+        calTimerEl.textContent = '\u2014';
+        running = false;
+        var again = document.createElement('button');
+        again.textContent = 'Try the practice reps again';
+        again.style.marginTop = '18px';
+        again.onclick = function(){
+          again.remove();
+          s('calTitle').textContent = 'Do two slow push-ups';
+          s('calLede').textContent  = 'Go all the way down and all the way up. Take your time \u2014 this is just so it can see your range.';
+          startCalibration();
+        };
+        screens.cal.appendChild(again);
+        return;
+      }
+      // pad the range slightly so the extremes aren't razor-thin
+      var pad = range * 0.08;
+      loMark -= pad; hiMark += pad;
+      beginCounting();
+    }
+  }
+
+  s('skipCal').onclick = function(){ switchToTimer(); };
+
+  // ---- counting -------------------------------------------------------
+  var countEl = s('countVal'), countSub = s('countSub'),
+      liveState = s('liveState'), stallWarn = s('stallWarn');
+
+  function beginCounting(){
+    count = 0; phase = 'up'; mode = 'reps';
+    lastRepAt = 0; lastProgressAt = performance.now();
+    countEl.textContent = '0';
+    countSub.textContent = 'of ' + goal;
+    stallWarn.classList.add('hide');
+    show('count');
+    running = true;
+  }
+
+  function countFrame(now){
+    var v = sampleLuma();
+    if (v === null) return;
+    pushSample(v);
+
+    // keep adapting gently so drifting light doesn't break the thresholds
+    if (v < loMark) loMark = loMark*0.98 + v*0.02;
+    if (v > hiMark) hiMark = hiMark*0.98 + v*0.02;
+
+    var n = normalise(v);
+
+    if (phase === 'up' && n < LOW){
+      phase = 'down';
+      liveState.textContent = 'down';
+    } else if (phase === 'down' && n > HIGH){
+      if (now - lastRepAt > MIN_REP_MS){
+        phase = 'up';
+        liveState.textContent = 'up';
+        lastRepAt = now; lastProgressAt = now;
+        marks[marks.length-1] = true;
+        registerRep();
+      }
+    }
+
+    if (now - lastProgressAt > STALL_MS){
+      stallWarn.classList.remove('hide');
+    }
+    drawTrace(document.getElementById('trace'), false);
+  }
+
+  function registerRep(){
+    count++;
+    countEl.textContent = count;
+    countEl.classList.remove('flash');
+    void countEl.offsetWidth;
+    countEl.classList.add('flash');
+    stallWarn.classList.add('hide');
+    paintDawn(count/goal);
+    if (count >= goal) finish();
+  }
+
+  function paintDawn(p){
+    document.getElementById('dawnWarm').style.opacity = Math.max(0, Math.min(1, p));
+  }
+
+  // ---- timer fallback -------------------------------------------------
+  var timerEnd = 0;
+  function switchToTimer(){
+    mode = 'timer';
+    closeSheet();
+    timerEnd = performance.now() + 30000;
+    countSub.textContent = 'seconds of holding still';
+    liveState.textContent = 'timer';
+    stallWarn.classList.add('hide');
+    show('count');
+    running = true;
+    if (!rafId) loop();
+  }
+  function timerFrame(now){
+    var left = Math.max(0, Math.ceil((timerEnd - now)/1000));
+    countEl.textContent = left;
+    paintDawn(1 - left/30);
+    if (left <= 0) finish();
+  }
+
+  // ---- finish ---------------------------------------------------------
+  function finish(){
+    running = false;
+    preview.classList.remove('on');
+    paintDawn(1);
+    s('doneBig').textContent = 'Alarm off.';
+    s('doneSub').textContent = mode === 'timer' ? 'Close enough. You\u2019re up.' : count + ' reps. You\u2019re up.';
+    show('done');
+  }
+
+  s('againBtn').onclick = function(){
+    paintDawn(0);
+    if (stream || demo) startCalibration(); else show('setup');
+  };
+
+  // ---- escape hatch ---------------------------------------------------
+  var sheet = s('sheet');
+  s('notWorking').onclick = function(){ sheet.classList.add('on'); };
+  function closeSheet(){ sheet.classList.remove('on'); }
+  s('closeSheet').onclick = closeSheet;
+  s('recal').onclick  = function(){ closeSheet(); startCalibration(); };
+  s('toTimer').onclick = switchToTimer;
+  s('bail').onclick   = function(){ closeSheet(); mode='bail'; finish();
+    s('doneSub').textContent = 'No reps. That\u2019s fine \u2014 it should never hold you hostage.'; };
+
+  // ---- trace rendering ------------------------------------------------
+  function drawTrace(cv, raw){
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var W = cv.width, H = cv.height;
+    ctx.clearRect(0,0,W,H);
+    if (samples.length < 2) return;
+
+    if (!raw){
+      ctx.strokeStyle = 'rgba(135,148,181,.35)';
+      ctx.setLineDash([4,6]); ctx.lineWidth = 2;
+      [LOW, HIGH].forEach(function(t){
+        var y = H - t*H;
+        ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+      });
+      ctx.setLineDash([]);
+    }
+
+    var step = W / (HIST - 1);
+    ctx.beginPath();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#4ECDC4';
+    ctx.lineJoin = 'round';
+    for (var i=0;i<samples.length;i++){
+      var n = raw
+        ? (hiMark>loMark ? (samples[i]-loMark)/(hiMark-loMark) : .5)
+        : normalise(samples[i]);
+      var x = i*step, y = H - Math.max(0,Math.min(1,n))*(H-8) - 4;
+      i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+    }
+    ctx.stroke();
+
+    // dots where reps were counted — you can see exactly what it accepted
+    ctx.fillStyle = '#FF6B35';
+    for (var j=0;j<marks.length;j++){
+      if (!marks[j]) continue;
+      var nn = normalise(samples[j]);
+      ctx.beginPath();
+      ctx.arc(j*step, H - nn*(H-8) - 4, 6, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // ---- main loop ------------------------------------------------------
+  function loop(){
+    rafId = requestAnimationFrame(loop);
+    if (!running) return;
+    var now = performance.now();
+    if (screens.cal.classList.contains('on')) calFrame(now);
+    else if (screens.count.classList.contains('on')){
+      mode === 'timer' ? timerFrame(now) : countFrame(now);
+    }
+  }
+})();
+</script>
+</body>
+</html>
