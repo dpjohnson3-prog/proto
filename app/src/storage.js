@@ -36,3 +36,21 @@ export async function saveScheduled(list){
   try { await Preferences.set({ key: SCHED_KEY, value: JSON.stringify(list) }); }
   catch (e){}
 }
+
+// Which morning's alarm has actually been satisfied, as a local YYYY-MM-DD
+// key. This is the durable record that a set was completed, so that a
+// notification tapped out of Notification Center hours later - or a rebuild of
+// the schedule - cannot resurrect a morning whose reps are already done.
+const SAT_KEY = 'dawn.satisfied';
+
+export async function loadSatisfied(){
+  try {
+    const { value } = await Preferences.get({ key: SAT_KEY });
+    return value || null;
+  } catch (e){ return null; }
+}
+
+export async function saveSatisfied(dayKey){
+  try { await Preferences.set({ key: SAT_KEY, value: dayKey }); }
+  catch (e){}
+}

@@ -3,7 +3,11 @@
 import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { initCounter } = await import(path.join(ROOT, 'src/counter.js'));
-const { occurrences, RING_BURST, DAYS_AHEAD, IOS_PENDING_CAP } = await import(path.join(ROOT, 'src/alarm.js'));
+const A = await import(path.join(ROOT, 'src/alarm.js'));
+const { RING_BURST, BURST_GAP_MIN, DAYS_AHEAD, IOS_PENDING_CAP, RESERVED_SLOTS,
+        WARN_LEAD_DAYS, WARN_HOUR, RING_GRACE_MIN,
+        plan, buildNotifications, shouldRing, inRingWindow, dayKey,
+        armedThrough, slotsUsed } = A;
 
 const HTML = fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 const IDS = new Set([...HTML.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
@@ -81,17 +85,110 @@ s=await boot(5,true); run(s.H,6500);
 check('flat signal refused at calibration (not silently counting)',
   String(s.H.doc.getElementById('calTitle').textContent).includes('enough movement'));
 
-console.log('\n== alarm scheduling maths ==');
-const times=occurrences('06:30', new Date('2026-03-01T22:00:00'));
-check('schedules RING_BURST * DAYS_AHEAD notifications', times.length===RING_BURST*DAYS_AHEAD, `${times.length}`);
-check('stays under the iOS 64-pending cap', times.length<IOS_PENDING_CAP, `${times.length} < ${IOS_PENDING_CAP}`);
-check('every occurrence is in the future', times.every(t=>t>new Date('2026-03-01T22:00:00')));
-check('first ring is the next 06:30', times[0].getHours()===6 && times[0].getMinutes()===30);
-check('burst is spaced a minute apart', (times[1]-times[0])===60000);
-check('bursts are strictly increasing', times.every((t,i)=>i===0||t>times[i-1]));
-const past=occurrences('06:30', new Date('2026-03-01T07:00:00'));
+console.log('\n== slot budget (BUG 1: the alarm must not expire silently) ==');
+const EVE = new Date('2026-03-01T22:00:00');   // before the next 06:30
+const built = buildNotifications('06:30', 10, EVE, null);
+check('total pending stays under the iOS 64 cap',
+  built.notifications.length <= IOS_PENDING_CAP, `${built.notifications.length} <= ${IOS_PENDING_CAP}`);
+check('slotsUsed() agrees with what is actually built',
+  slotsUsed() === built.notifications.length, `${slotsUsed()} vs ${built.notifications.length}`);
+check('budget leaves headroom (not scraping the cap)',
+  IOS_PENDING_CAP - built.notifications.length >= 5,
+  `${IOS_PENDING_CAP - built.notifications.length} slots spare`);
+check('rings = RING_BURST * DAYS_AHEAD',
+  built.rings.length === RING_BURST * DAYS_AHEAD, `${built.rings.length}`);
+check('exactly one lapse warning is scheduled',
+  built.notifications.filter(n => n.extra.kind === 'warn').length === 1);
+check('ring coverage is longer than the old 3 minutes',
+  (RING_BURST - 1) * BURST_GAP_MIN >= 7, `${(RING_BURST-1)*BURST_GAP_MIN} min`);
+
+const warn = built.notifications.find(n => n.extra.kind === 'warn');
+check('warning fires before the window ends', warn.schedule.at < built.through);
+// What matters is not elapsed hours but how many mornings still ring after the
+// warning lands - that is the slack the user actually gets to act in.
+const morningsAfterWarn = new Set(
+  built.rings.filter(r => r.schedule.at > warn.schedule.at).map(r => r.extra.morning));
+check('WARN_LEAD_DAYS mornings still ring after the warning',
+  morningsAfterWarn.size === WARN_LEAD_DAYS, `${morningsAfterWarn.size} mornings of slack`);
+check('warning lands WARN_LEAD_DAYS calendar days before the last morning',
+  (new Date(built.through) - new Date(dayKey(warn.schedule.at))) / 86400000 > WARN_LEAD_DAYS - 1,
+  `warn ${dayKey(warn.schedule.at)} -> last ${dayKey(built.through)}`);
+check('warning fires at WARN_HOUR, when someone can act',
+  warn.schedule.at.getHours() === WARN_HOUR);
+check('warning id is outside the ring id range (never treated as a ring)',
+  built.rings.every(r => r.id !== warn.id));
+check('warning is not time-sensitive (it is not an alarm)',
+  warn.interruptionLevel !== 'timeSensitive');
+check('warning carries no alarm sound', !warn.sound);
+
+console.log('\n== scheduling maths ==');
+const times = built.rings.map(r => r.schedule.at);
+check('every ring is in the future', times.every(t => t > EVE));
+check('rings are strictly increasing', times.every((t, i) => i === 0 || t > times[i-1]));
+check('first ring is the next 06:30',
+  times[0].getHours() === 6 && times[0].getMinutes() === 30);
+check('burst spacing is BURST_GAP_MIN',
+  (times[1] - times[0]) === BURST_GAP_MIN * 60000);
+check('armedThrough is the last burst of the last morning',
+  armedThrough(built.mornings).getTime() === times[times.length-1].getTime());
+const passed = buildNotifications('06:30', 10, new Date('2026-03-01T07:00:00'), null);
 check('an alarm time already passed today rolls to tomorrow',
-  past[0].getDate()===2, past[0].toISOString());
+  passed.rings[0].schedule.at.getDate() === 2, passed.rings[0].schedule.at.toISOString());
+check('every ring carries the morning it belongs to',
+  built.rings.every(r => /^\d{4}-\d{2}-\d{2}$/.test(r.extra.morning)));
+const byMorning = {};
+for (const r of built.rings) byMorning[r.extra.morning] = (byMorning[r.extra.morning]||0)+1;
+check('each morning gets exactly RING_BURST rings',
+  Object.values(byMorning).every(v => v === RING_BURST), JSON.stringify(Object.values(byMorning)));
+check('the window spans DAYS_AHEAD distinct mornings',
+  Object.keys(byMorning).length === DAYS_AHEAD, `${Object.keys(byMorning).length}`);
+
+console.log('\n== BUG 2: only a completed set satisfies a morning ==');
+const TODAY = dayKey(EVE);
+check('a real ring is blocked while a set is in progress',
+  shouldRing({ setInProgress: true, real: true, morning: TODAY, satisfiedKey: null }).reason === 'set-in-progress');
+check('a later burst cannot yank you out of the set that dismisses it',
+  !shouldRing({ setInProgress: true, real: true, morning: TODAY, satisfiedKey: null }).ring);
+check('a real ring for an already-satisfied morning is blocked',
+  shouldRing({ setInProgress: false, real: true, morning: TODAY, satisfiedKey: TODAY }).reason === 'already-satisfied');
+check('a real ring for an UNsatisfied morning rings',
+  shouldRing({ setInProgress: false, real: true, morning: TODAY, satisfiedKey: '2026-02-28' }).ring);
+check('yesterday being satisfied does not suppress today',
+  shouldRing({ setInProgress: false, real: true, morning: TODAY, satisfiedKey: '2026-02-28' }).ring);
+check('a test run still works after the morning is satisfied',
+  shouldRing({ setInProgress: false, real: false, morning: TODAY, satisfiedKey: TODAY }).ring);
+
+const sat = buildNotifications('06:30', 10, new Date('2026-03-01T05:00:00'), '2026-03-01');
+check('a satisfied morning is not rescheduled by a rebuild',
+  sat.rings.every(r => r.extra.morning !== '2026-03-01'));
+check('...while later mornings still are',
+  sat.rings.some(r => r.extra.morning === '2026-03-02'));
+check('a rebuild mid-morning cannot resurrect a satisfied ring',
+  buildNotifications('06:30', 10, new Date('2026-03-01T06:31:00'), '2026-03-01')
+    .rings.every(r => r.extra.morning !== '2026-03-01'));
+check('an UNsatisfied morning IS kept by a mid-ring rebuild',
+  buildNotifications('06:30', 10, new Date('2026-03-01T06:31:00'), null)
+    .rings.some(r => r.extra.morning === '2026-03-01'));
+
+// markSatisfied cancels by exact morning match; this is that predicate.
+const recs = built.rings.map(r => ({ id: r.id, at: r.extra.at, morning: r.extra.morning }));
+const firstKey = recs[0].morning;
+check('cancelling a morning selects exactly its own bursts',
+  recs.filter(e => e.morning === firstKey).length === RING_BURST);
+check('cancelling a morning leaves every other morning intact',
+  recs.filter(e => e.morning !== firstKey).length === RING_BURST * (DAYS_AHEAD - 1));
+
+console.log('\n== top-up guard (must not cancel notifications about to fire) ==');
+check('inRingWindow is true at the first burst',
+  inRingWindow('06:30', new Date('2026-03-01T06:30:10')));
+check('inRingWindow is true mid-burst',
+  inRingWindow('06:30', new Date('2026-03-01T06:35:00')));
+check('inRingWindow covers the grace period for a slow set',
+  inRingWindow('06:30', new Date('2026-03-01T07:05:00')));
+check('inRingWindow is false before the alarm',
+  !inRingWindow('06:30', new Date('2026-03-01T06:29:00')));
+check('inRingWindow is false once the grace has run out',
+  !inRingWindow('06:30', new Date('2026-03-01T08:30:00')));
 
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

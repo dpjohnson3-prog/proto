@@ -41,29 +41,71 @@ per-app in iOS Settings.
 iOS ignores any notification sound longer than 30 seconds and substitutes the
 default. There is no way to make one notification ring continuously.
 
-So `src/alarm.js` schedules **4 notifications a minute apart** per morning
-(`RING_BURST`, `BURST_GAP_MIN`) to get roughly 4 minutes of intermittent
-ringing. It's the standard workaround, and it's still not a real alarm: it's
-four notification sounds, not a siren. Tune the constants to taste.
+So `src/alarm.js` schedules **8 notifications a minute apart** per morning
+(`RING_BURST`, `BURST_GAP_MIN`): 8 sounds across 7 minutes. It's the standard
+workaround, and it's still not a real alarm — it's eight notification sounds,
+not a siren. `BURST_GAP_MIN` spreads the same 8 slots wider if you prefer
+(gap 2 gives 14 minutes, sparser).
 
-Finishing your reps cancels that morning's remaining notifications
-(`silenceThisMorning`), so it doesn't keep ringing while you make coffee.
-
-### The 64-notification cap, and why the alarm expires
+### The 64-notification cap, and the budget
 
 iOS keeps only the **64 soonest** pending local notifications per app. A
 repeating daily notification would fit in one slot — but a single day's
 occurrence can't be cancelled from a repeat, so finishing your reps couldn't
 silence the rest of that morning's burst.
 
-So this schedules explicit one-shot dates instead: `RING_BURST` (4) ×
-`DAYS_AHEAD` (10) = **40 pending notifications**, topped up every time the app
-is opened.
+So this schedules explicit one-shot dates, and bursts-per-morning (B) trades
+directly against days-ahead (D):
 
-> **The consequence, stated plainly: if you don't open the app for 10 days, the
-> alarm stops working.** Raising `DAYS_AHEAD` above 16 would exceed the 64 cap.
-> The real fixes are a push server or a background-refresh task, both of which
-> are more machinery than this prototype has.
+| B | D | B×D | +warn | ring coverage | disuse buffer |
+|---|---|---|---|---|---|
+| 4 | 10 | 40 | 41 | 3 min | 10 days |
+| 6 | 9 | 54 | 55 | 5 min | 9 days |
+| **8** | **7** | **56** | **57** | **7 min** | **7 days** |
+| 10 | 6 | 60 | 61 | 9 min | 6 days |
+| 12 | 5 | 60 | 61 | 11 min | 5 days |
+
+**Chosen: B=8, D=7, +1 warning = 57 pending, 7 slots spare.**
+
+The reasoning: you cannot dismiss this alarm without opening the app, so every
+normal morning re-arms a full window. D only buffers *disuse* — a trip, a
+holiday — not routine use. Under-ringing costs you **every** morning; a lapsed
+window costs you once, after D days of not touching the app, and is no longer
+silent. Slots are better spent on B.
+
+### The window still expires — but loudly
+
+Two changes make "armed" stop being a lie:
+
+1. **The alarm screen always shows the date it rings through**, how many
+   mornings are left, and that it stops until you open the app again.
+2. **A warning notification** fires at 20:00, `WARN_LEAD_DAYS` (2) before the
+   last armed morning: *"It stops ringing after <date>. Open the app to keep it
+   armed."* That costs exactly one slot and leaves two more mornings of slack.
+
+> **Still true: if you ignore the warning and don't open the app, it lapses.**
+> A genuinely reliable top-up needs one of:
+>
+> - **Background refresh** (`BGTaskScheduler`) — iOS decides if and when it
+>   runs, based on how much you use the app. Reduces the lapse risk; does not
+>   remove it. Cost: a native task handler plus a background-modes entitlement.
+> - **A push server** — reliable, because the server re-arms you. Cost: a
+>   backend, APNs certificates, device-token registration, and now the app has
+>   infrastructure and a privacy surface it didn't have before.
+>
+> Neither is built. Ask before committing to either.
+
+### What counts as dismissing the alarm
+
+A morning is satisfied **only when a set is completed** — reps finished, the
+30-second timer run down, or a deliberate bail. All three are real exits and
+all three count.
+
+What does **not** count: tapping the notification, swiping it away (iOS doesn't
+report those anyway), opening the app and abandoning it, or a "Try it now" test
+run. The satisfied morning is recorded durably (`dawn.satisfied`), so a
+notification tapped out of Notification Center hours later cannot re-ring a
+morning whose reps are done, and rebuilding the schedule cannot resurrect it.
 
 ### Other things that bite
 
@@ -138,6 +180,7 @@ Capacitor 8 uses Swift Package Manager, so there is **no `pod install`**.
 | **Screen Wake Lock** during a set (and whether iOS 15 needs the plugin) |
 | **Battery and thermals** — a camera + `requestAnimationFrame` loop at 6am |
 | **Re-validating accuracy** — the detection maths is verified, the optics are not |
+| **Notification scheduling and delivery** — none of it can run off-device |
 
 That last one matters most. The counting logic is proven; what is *not* proven
 is that a phone propped against a water glass at 6am sees the same luminance
@@ -182,3 +225,61 @@ src/main.js      app shell: screens, alarm wiring, audio, wake lock
 scripts/port.py  regenerates counter.js AND styles.css from the prototype
 ios-assets/      where the alarm sound goes (TODO)
 ```
+
+---
+
+## Device test plan (none of this can be verified off-device)
+
+Notification scheduling, delivery, sound and the satisfaction rules were
+developed on Linux. The **logic** is covered by 48 assertions in
+`scripts/verify-escapes.mjs`; **delivery** is covered by nothing. These are the
+checks that need a real iPhone, in rough priority order.
+
+### 1. A set dismisses the morning, and nothing else does
+
+Set the alarm 2 minutes out, lock the phone, wait for it to ring.
+
+| Test | Expected |
+|---|---|
+| Tap the notification, then background the app without doing reps | It keeps ringing — bursts continue |
+| Swipe the notification away | It keeps ringing |
+| Open the app, sit on the ring screen, do nothing | It keeps ringing |
+| Complete the reps | Ringing stops immediately, no further bursts |
+| Finish via the 30-second timer instead | Ringing stops |
+| Finish via *Just turn the alarm off* | Ringing stops |
+| After finishing, pull down Notification Center and tap an older burst | Opens to the alarm screen, does **not** ring again |
+
+### 2. A later burst must not interrupt a set in progress
+
+Start the reps and keep going past the next burst (they are a minute apart).
+The burst must not throw you back to the ring screen or restart the audio.
+This is the one most likely to be wrong, because it depends on iOS delivering
+`localNotificationReceived` to a foregrounded app.
+
+### 3. A test run must not eat a real alarm
+
+With the alarm armed for tomorrow, hit *Try it now* and complete the reps.
+Then check the alarm screen still says armed, and confirm it rings tomorrow.
+Sharper version: arm for 06:30, at 06:15 run a test and complete it — the
+06:30 alarm must still ring.
+
+### 4. The budget is real
+
+After arming, confirm iOS actually holds all 57. There is no UI for this;
+temporarily log `alarm.pendingCount()` (it should read 57) and watch it fall as
+mornings pass. If it reads 64, something else is scheduling too and the oldest
+are being dropped.
+
+### 5. The lapse warning
+
+Hard to wait 5 days for. To force it, temporarily set `WARN_LEAD_DAYS` to a
+value close to `DAYS_AHEAD` so the warning schedules within minutes, and check
+that tapping it opens the alarm screen and **does not start a ring**.
+
+### 6. The things iOS decides, not you
+
+- Ring with the phone locked, in Focus/Do Not Disturb, and with the silent
+  switch on. The silent switch **will** kill it — confirm how dead it is.
+- Custom sound actually plays (and is under 30s, or iOS substitutes the
+  default silently).
+- Screen stays awake through a whole set.

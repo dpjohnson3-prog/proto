@@ -12,6 +12,11 @@ const isNative = Capacitor.isNativePlatform();
 let settings = { time: '06:30', goal: 10, armed: false };
 let counter = null;
 
+// What the current ring is, if any. `real` distinguishes an actual alarm from
+// a "Try it now" test: only a real ring can satisfy a morning, or a 06:15 test
+// run would cancel the 06:30 alarm it was meant to rehearse.
+let activeRing = null;
+
 // ---------------------------------------------------------------------------
 // Alarm sound.
 // ---------------------------------------------------------------------------
@@ -85,18 +90,74 @@ function showAlarmScreen(){
   counter.show('alarm');
 }
 
+// The lapse warning is informational: tapping it must open the app, not start
+// an alarm. Anything with kind 'ring' is a real ring and carries its morning.
+function handleNotification(n){
+  const extra = (n && n.extra) || {};
+  if (extra.kind === 'warn'){
+    showAlarmScreen();
+    const w = $('armWarn');
+    w.classList.remove('hide');
+    w.textContent = 'This alarm was about to lapse. Opening the app has ' +
+      're-armed it for another ' + alarm.DAYS_AHEAD + ' days.';
+    return;
+  }
+  enterRing({ real: true, morning: extra.morning || alarm.dayKey(new Date()) });
+}
+
+// "Armed" on its own becomes a lie once the window runs out, so the date it
+// runs out is always on screen next to it.
+function renderArmedThrough(){
+  const el = $('armThrough');
+  if (!isNative){
+    el.textContent = 'Nothing is scheduled in a browser. The iOS build arms ' +
+      alarm.DAYS_AHEAD + ' mornings at a time.';
+    return;
+  }
+  const built = alarm.buildNotifications(settings.time, settings.goal, new Date(), null);
+  if (!built.through){ el.textContent = ''; return; }
+  const day = built.through.toLocaleDateString([], {
+    weekday: 'long', month: 'short', day: 'numeric'
+  });
+  const left = Math.max(0, Math.round((built.through - Date.now()) / 86400000));
+  el.textContent = 'Rings through ' + day + ' (' + left + ' more mornings), then ' +
+    'stops until you open the app again.' +
+    (built.warnAt ? ' You will be reminded ' + alarm.WARN_LEAD_DAYS + ' days before.' : '');
+}
+
 function renderArmState(){
   const el = $('armState');
-  if (!settings.armed){ el.textContent = 'Not armed.'; el.classList.remove('armed'); return; }
+  if (!settings.armed){
+    el.textContent = 'Not armed.';
+    el.classList.remove('armed');
+    $('armThrough').textContent = '';
+    return;
+  }
   const [h, m] = settings.time.split(':').map(Number);
   const t = new Date(); t.setHours(h, m, 0, 0);
   const label = t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   el.textContent = 'Armed for ' + label + ' — ' + settings.goal +
     (settings.goal === 1 ? ' push-up' : ' push-ups') + '.';
   el.classList.add('armed');
+  renderArmedThrough();
 }
 
-function enterRing(){
+async function enterRing({ real = false, morning = null } = {}){
+  const key = morning || alarm.dayKey(new Date());
+  const gate = alarm.shouldRing({
+    setInProgress: counter.isRunning(),
+    real,
+    morning: key,
+    satisfiedKey: isNative ? await alarm.satisfiedKey() : null
+  });
+  if (!gate.ring){
+    // 'set-in-progress': a later burst arrived while they are actually doing
+    // the reps - stay out of the way. 'already-satisfied': a notification from
+    // a morning that is already done was tapped out of Notification Center.
+    if (gate.reason === 'already-satisfied') showAlarmScreen();
+    return;
+  }
+  activeRing = { real, morning: key };
   $('soundWarn').classList.add('hide');
   $('ringCount').textContent = settings.goal;
   counter.setGoal(settings.goal);
@@ -187,7 +248,7 @@ $('armBtn').onclick = async () => {
   $('armBtn').textContent = 'Disarm';
 };
 
-$('testBtn').onclick = () => { primeAudio(); enterRing(); };
+$('testBtn').onclick = () => { primeAudio(); enterRing({ real: false }); };
 
 // Never trap someone on the ringing screen either: the same escape sheet the
 // counting screen uses is reachable before a single rep is attempted.
@@ -229,10 +290,18 @@ async function boot(){
     onFinish: async () => {
       stopRinging();
       releaseWakeLock();
-      // Reps done (or timed out, or bailed) - kill the rest of this morning's
-      // ring so it does not keep firing while they are making coffee.
-      if (isNative) await alarm.silenceThisMorning();
       $('againBtn').textContent = 'Back to the alarm';
+      // A set is finished. This is the ONLY thing that satisfies a morning:
+      // reps completed, the 30-second timer run down, or a deliberate bail.
+      // The escape hatches are legitimate exits and count as satisfied; a
+      // notification tap, a swipe, or opening and abandoning the app do not.
+      const ring = activeRing;
+      activeRing = null;
+      if (!isNative || !ring || !ring.real) return;
+      await alarm.markSatisfied(ring.morning);
+      // Now this morning is settled, refill the window to its full depth.
+      if (settings.armed) await alarm.topUp(settings.time, settings.goal);
+      renderArmState();
     }
   });
 
@@ -240,9 +309,13 @@ async function boot(){
 
   if (isNative){
     // Tapped the notification (app backgrounded or cold-launched).
-    LocalNotifications.addListener('localNotificationActionPerformed', () => { enterRing(); });
+    LocalNotifications.addListener('localNotificationActionPerformed', (ev) => {
+      handleNotification(ev && ev.notification);
+    });
     // Fired while the app was already open and in front.
-    LocalNotifications.addListener('localNotificationReceived', () => { enterRing(); });
+    LocalNotifications.addListener('localNotificationReceived', (n) => {
+      handleNotification(n);
+    });
 
     App.addListener('appStateChange', async ({ isActive }) => {
       if (isActive && settings.armed) await alarm.topUp(settings.time, settings.goal);
