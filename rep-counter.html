@@ -662,6 +662,7 @@
     var left = Math.max(0, Math.ceil((timerEnd - now)/1000));
     countEl.textContent = left;
     paintDawn(1 - left/30);
+    updateDebug(now, 'timer');   // else the overlay freezes on stale numbers
     if (left <= 0) finish();
   }
 
