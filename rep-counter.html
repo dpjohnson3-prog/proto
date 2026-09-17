@@ -141,12 +141,37 @@
   .done .big{font-size:clamp(40px,11vw,64px);font-weight:800;letter-spacing:-.03em;line-height:1.05}
   .done p{color:#3A2410;font-size:18px;margin-top:14px}
   .done.warm .big{color:#160B05}
+
+  /* debug overlay — ?debug=1 only. pointer-events:none so it can never sit
+     between someone and an escape hatch. */
+  #dbg{
+    position:fixed;left:10px;bottom:10px;z-index:20;
+    display:none;pointer-events:none;
+    font:600 11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background:rgba(6,9,22,.88);border:1px solid #2B3763;border-radius:10px;
+    padding:8px 10px;color:#CFF5F1;min-width:184px;
+  }
+  #dbg.on{display:block}
+  #dbg b{color:var(--gold);font-weight:800;font-variant-numeric:tabular-nums}
+  #dbg .k{color:var(--dim);font-weight:400}
+  #dbgBar{position:relative;height:7px;border-radius:4px;margin:5px 0;background:#1B2545}
+  #dbgMark{position:absolute;top:-2px;bottom:-2px;width:3px;margin-left:-1.5px;
+    background:var(--ember);border-radius:2px;left:50%}
 </style>
 </head>
 <body>
 <div id="dawn"></div>
 <div id="dawnWarm"></div>
 <div id="preview"><video id="cam" playsinline muted autoplay></video></div>
+<div id="dbg" aria-hidden="true">
+  <div><span class="k">n </span><b id="dN">-</b><span class="k"> phase </span><b id="dPhase">-</b></div>
+  <div id="dbgBar"><i id="dbgMark"></i></div>
+  <div><span class="k">lo </span><b id="dLo">-</b><span class="k"> hi </span><b id="dHi">-</b></div>
+  <div><span class="k">range </span><b id="dRange">-</b><span class="k"> cal </span><b id="dCal">-</b></div>
+  <div><span class="k">floor </span><b id="dFloor">-</b><span class="k"> raw </span><b id="dRaw">-</b></div>
+  <div><span class="k">swing </span><b id="dSwing">-</b></div>
+  <div><span class="k">reps </span><b id="dReps">-</b><span class="k"> rej </span><b id="dRej">-</b><span class="k"> fps </span><b id="dFps">-</b></div>
+</div>
 
 <div class="wrap">
 
@@ -243,16 +268,49 @@
   // ---- tunables -------------------------------------------------------
   var GRID_W = 48, GRID_H = 36;     // downsampled analysis resolution
   var HIST    = 150;                // samples kept for the trace (~5s)
-  var LOW     = 0.35, HIGH = 0.65;  // hysteresis thresholds (normalised)
-  var MIN_REP_MS = 450;             // reject jitter / double counts
-  var MIN_RANGE  = 4.0;             // min luminance swing to trust the signal
-  var STALL_MS   = 12000;           // warn if nothing counted for this long
+  var LOW     = 0.40, HIGH = 0.60;  // hysteresis thresholds (normalised)
+  var MIN_REP_MS  = 450;            // reject jitter / double counts
+  var MIN_DOWN_MS = 240;            // nobody pushes back up faster than this
+  var MIN_RANGE   = 4.0;            // min luminance swing to trust the signal
+  var STALL_MS    = 12000;          // warn if nothing counted for this long
+
+  // Calibration. Two slow reps, minus the camera's auto-exposure settle, read
+  // as percentiles instead of raw min/max. A rep signal dwells at its
+  // turnarounds, so the 5th/95th percentiles sit within ~1% of the true
+  // extremes while discarding one-frame flyers. That is what the old 8% pad
+  // was reaching for, except the pad widened the range instead of cleaning it,
+  // which made every working rep ~16% harder to complete.
+  var CAL_MS        = 6000;
+  var CAL_WARMUP_MS = 900;
+  var CAL_PCT       = 0.05;
+
+  // Signal conditioning and the adaptive envelope.
+  var SMOOTH_MS       = 70;         // gentle low-pass: kills sensor noise, not reps
+  var ENV_WIN_MS      = 1800;       // trailing window the envelope contracts toward
+  var ENV_MIN_FILL_MS = 1400;       // ...only once the window really holds that much
+  var ENV_TAU_OPEN    = 0.12;       // seconds — envelope opens fast
+  var ENV_TAU_CLOSE   = 0.80;       // seconds — and closes nearly as fast
+  var ENV_FLOOR_FRAC  = 0.42;       // never contract below this much of the cal range
+  var REP_SWING_FRAC  = 0.12;       // a rep must move this much actual luminance
+  var STEP_FRAC       = 0.45;       // a one-frame jump this big is a light change
+
+  var DEBUG = false;
+  try { DEBUG = /(?:^|[?&])debug=1(?:&|$)/.test(location.search); } catch(e){}
 
   // ---- state ----------------------------------------------------------
   var goal = 10, count = 0, phase = 'up', lastRepAt = 0, lastProgressAt = 0;
-  var loMark = Infinity, hiMark = -Infinity;   // calibrated luminance range
+  var loMark = Infinity, hiMark = -Infinity;   // live luminance envelope
   var samples = [], marks = [];                // trace data
   var running = false, mode = 'reps', rafId = null, stream = null;
+
+  var calRange = 0;                            // range measured during calibration
+  var envFloor = MIN_RANGE, minRepSwing = MIN_RANGE * 0.5;
+  var envWin = [], envWinT = [];               // trailing window for contraction
+  var smBuf  = [], smBufT  = [];               // smoothing window
+  var prevRaw = null, lastT = 0, downAt = 0;
+  var repLo = Infinity, repHi = -Infinity;     // extremes within the current dip
+  var lastSwing = 0, rejSwing = 0, rejFast = 0;
+  var lastN = 0.5, lastRaw = 0, fps = 0;
 
   var work = document.createElement('canvas');
   work.width = GRID_W; work.height = GRID_H;
@@ -360,33 +418,90 @@
     return Math.max(0, Math.min(1, (v - loMark) / range));
   }
 
+  function pctl(arr, p){
+    if (!arr.length) return 0;
+    var a = arr.slice().sort(function(x,y){ return x - y; });
+    var i = Math.round(p * (a.length - 1));
+    return a[Math.max(0, Math.min(a.length - 1, i))];
+  }
+
+  // Time-based moving average, so it behaves the same at 24fps and 120fps.
+  function smooth(v, now){
+    smBuf.push(v); smBufT.push(now);
+    while (smBufT.length > 1 && now - smBufT[0] > SMOOTH_MS){ smBuf.shift(); smBufT.shift(); }
+    while (smBuf.length > 10){ smBuf.shift(); smBufT.shift(); }
+    var sum = 0;
+    for (var i=0;i<smBuf.length;i++) sum += smBuf[i];
+    return sum / smBuf.length;
+  }
+
+  // A light change moves every pixel at once, far faster than a body can move.
+  // Slide the whole frame of reference with it, so the normalised signal stays
+  // continuous instead of reading the step as half a rep.
+  function rebase(d){
+    loMark += d; hiMark += d; repLo += d; repHi += d;
+    var i;
+    for (i=0;i<envWin.length;i++)  envWin[i]  += d;
+    for (i=0;i<smBuf.length;i++)   smBuf[i]   += d;
+    for (i=0;i<samples.length;i++) samples[i] += d;
+  }
+
+  function resetSignal(){
+    samples = []; marks = [];
+    envWin = []; envWinT = [];
+    smBuf  = []; smBufT  = [];
+    prevRaw = null; lastT = 0; fps = 0;
+    repLo = Infinity; repHi = -Infinity;
+    lastSwing = 0; rejSwing = 0; rejFast = 0;
+  }
+
   // ---- calibration ----------------------------------------------------
-  var calEnd = 0, calTimerEl = s('calTimer'), calStateEl = s('calState');
+  var calEnd = 0, calStart = 0, calSamples = [], calShow = 0,
+      calTimerEl = s('calTimer'), calStateEl = s('calState');
 
   function startCalibration(){
     loMark = Infinity; hiMark = -Infinity;
-    samples = []; marks = [];
-    calEnd = performance.now() + 6000;
+    calSamples = []; calShow = 0;
+    resetSignal();
+    calStart = performance.now();
+    calEnd = calStart + CAL_MS;
     show('cal');
     running = true;
-    loop();
+    if (!rafId) loop();   // never stack a second rAF chain on recalibrate
   }
 
   function calFrame(now){
-    var v = sampleLuma();
-    if (v !== null){
-      if (v < loMark) loMark = v;
-      if (v > hiMark) hiMark = v;
+    var raw = sampleLuma();
+    if (raw !== null){
+      var v = smooth(raw, now);
+      lastRaw = v;
+      // Skip the auto-exposure settle: the camera opens dark and ramps, and a
+      // single settling frame used to define an extreme for the whole session.
+      if (now - calStart >= CAL_WARMUP_MS){
+        calSamples.push(v);
+        if (v < loMark) loMark = v;
+        if (v > hiMark) hiMark = v;
+      }
       pushSample(v);
+      lastN = (hiMark > loMark)
+        ? Math.max(0, Math.min(1, (v - loMark) / (hiMark - loMark))) : 0.5;
     }
     var left = Math.max(0, Math.ceil((calEnd - now)/1000));
     calTimerEl.textContent = left;
-    calStateEl.textContent = (hiMark - loMark).toFixed(1) + ' range';
+    if (now - calStart < CAL_WARMUP_MS){
+      calStateEl.textContent = 'settling';
+    } else if (now - calShow > 150){
+      calShow = now;
+      calStateEl.textContent =
+        (pctl(calSamples, 1 - CAL_PCT) - pctl(calSamples, CAL_PCT)).toFixed(1) + ' range';
+    }
     drawTrace(document.getElementById('traceCal'), true);
+    updateDebug(now, 'calibrating');
 
     if (now >= calEnd){
-      var range = hiMark - loMark;
-      if (range < MIN_RANGE){
+      var lo = pctl(calSamples, CAL_PCT), hi = pctl(calSamples, 1 - CAL_PCT);
+      var range = hi - lo;
+      if (calSamples.length < 30 || range < MIN_RANGE){
         // Tell them NOW, not after 30 uncounted reps.
         s('calTitle').textContent = 'It can\u2019t see enough movement';
         s('calLede').textContent  = 'Move the phone further back so more of your body is in frame, then try the practice reps again.';
@@ -404,9 +519,12 @@
         screens.cal.appendChild(again);
         return;
       }
-      // pad the range slightly so the extremes aren't razor-thin
-      var pad = range * 0.08;
-      loMark -= pad; hiMark += pad;
+      // No pad. The percentiles above already are the working extremes, and
+      // padding them only moved the goalposts away from every real rep.
+      loMark = lo; hiMark = hi;
+      calRange    = range;
+      envFloor    = Math.max(MIN_RANGE, calRange * ENV_FLOOR_FRAC);
+      minRepSwing = Math.max(MIN_RANGE * 0.5, calRange * REP_SWING_FRAC);
       beginCounting();
     }
   }
@@ -419,33 +537,87 @@
 
   function beginCounting(){
     count = 0; phase = 'up'; mode = 'reps';
-    lastRepAt = 0; lastProgressAt = performance.now();
+    lastRepAt = 0; downAt = 0; lastProgressAt = performance.now();
+    resetSignal();
     countEl.textContent = '0';
     countSub.textContent = 'of ' + goal;
+    liveState.textContent = 'up';
     stallWarn.classList.add('hide');
     show('count');
     running = true;
   }
 
   function countFrame(now){
-    var v = sampleLuma();
-    if (v === null) return;
+    var raw = sampleLuma();
+    if (raw === null) return;
+
+    var dt = lastT ? Math.min(0.1, Math.max(1/240, (now - lastT)/1000)) : 1/60;
+    lastT = now;
+    fps = fps ? fps*0.9 + (1/dt)*0.1 : 1/dt;
+
+    // Step detection reads the RAW sample on purpose: the smoother would
+    // spread a light step across several frames and hide it.
+    if (prevRaw !== null){
+      var d = raw - prevRaw;
+      if (Math.abs(d) > STEP_FRAC * (hiMark - loMark)) rebase(d);
+    }
+    prevRaw = raw;
+
+    var v = smooth(raw, now);
+    lastRaw = v;
     pushSample(v);
 
-    // keep adapting gently so drifting light doesn't break the thresholds
-    if (v < loMark) loMark = loMark*0.98 + v*0.02;
-    if (v > hiMark) hiMark = hiMark*0.98 + v*0.02;
+    envWin.push(v); envWinT.push(now);
+    while (envWinT.length && now - envWinT[0] > ENV_WIN_MS){ envWin.shift(); envWinT.shift(); }
+    var wLo = Infinity, wHi = -Infinity;
+    for (var i=0;i<envWin.length;i++){
+      if (envWin[i] < wLo) wLo = envWin[i];
+      if (envWin[i] > wHi) wHi = envWin[i];
+    }
+    var filled = envWinT.length > 1 && (now - envWinT[0]) >= ENV_MIN_FILL_MS;
+
+    // Decaying envelope. The old version could only ever widen loMark/hiMark,
+    // so a single bright frame stretched the range for good and the normalised
+    // signal crept toward the middle until it stopped crossing the thresholds
+    // at all. Now it also eases back toward the last couple of seconds'
+    // extremes, so the range tracks the reps actually being done.
+    var kOpen  = 1 - Math.exp(-dt / ENV_TAU_OPEN);
+    var kClose = 1 - Math.exp(-dt / ENV_TAU_CLOSE);
+    if (v < loMark)  loMark += (v - loMark) * kOpen;
+    else if (filled) loMark += (wLo - loMark) * kClose;
+    if (v > hiMark)  hiMark += (v - hiMark) * kOpen;
+    else if (filled) hiMark += (wHi - hiMark) * kClose;
+
+    // ...but never so far that noise fills the scale and invents reps.
+    if (hiMark - loMark < envFloor){
+      var mid = (hiMark + loMark) / 2;
+      loMark = mid - envFloor/2; hiMark = mid + envFloor/2;
+    }
 
     var n = normalise(v);
+    lastN = n;
+    if (v < repLo) repLo = v;
+    if (v > repHi) repHi = v;
 
     if (phase === 'up' && n < LOW){
-      phase = 'down';
+      phase = 'down'; downAt = now;
+      repLo = v; repHi = v;
       liveState.textContent = 'down';
     } else if (phase === 'down' && n > HIGH){
-      if (now - lastRepAt > MIN_REP_MS){
+      var swing = repHi - repLo;
+      if (now - lastRepAt <= MIN_REP_MS){
+        // too soon after the last rep to be a new one - stay down and wait
+      } else if (now - downAt < MIN_DOWN_MS){
+        // down and back up faster than a body moves: a flicker, not a rep
+        phase = 'up'; liveState.textContent = 'up'; rejFast++;
+      } else if (swing < minRepSwing){
+        // crossed both thresholds without much actual luminance moving, which
+        // means the envelope is tight around noise rather than around a rep
+        phase = 'up'; liveState.textContent = 'up'; rejSwing++; lastSwing = swing;
+      } else {
         phase = 'up';
         liveState.textContent = 'up';
-        lastRepAt = now; lastProgressAt = now;
+        lastRepAt = now; lastProgressAt = now; lastSwing = swing;
         marks[marks.length-1] = true;
         registerRep();
       }
@@ -455,6 +627,7 @@
       stallWarn.classList.remove('hide');
     }
     drawTrace(document.getElementById('trace'), false);
+    updateDebug(now, null);
   }
 
   function registerRep(){
@@ -557,6 +730,39 @@
       ctx.arc(j*step, H - nn*(H-8) - 4, 6, 0, Math.PI*2);
       ctx.fill();
     }
+  }
+
+  // ---- debug overlay (?debug=1) ---------------------------------------
+  // Everything the thresholds are actually reading, on the phone, mid-set.
+  var dbgT = 0, dEl = null;
+  if (DEBUG){
+    s('dbg').classList.add('on');
+    dEl = {n:s('dN'), phase:s('dPhase'), mark:s('dbgMark'), lo:s('dLo'), hi:s('dHi'),
+           range:s('dRange'), cal:s('dCal'), floor:s('dFloor'), raw:s('dRaw'),
+           swing:s('dSwing'), reps:s('dReps'), rej:s('dRej'), fps:s('dFps')};
+    // shade the band between LOW and HIGH so the marker's position reads at a glance
+    s('dbgBar').style.background =
+      'linear-gradient(90deg,#1B2545 0 ' + (LOW*100) + '%,#2C3A6B ' +
+      (LOW*100) + '% ' + (HIGH*100) + '%,#1B2545 ' + (HIGH*100) + '% 100%)';
+  }
+  function num(x){ return isFinite(x) ? x.toFixed(1) : '-'; }
+  function updateDebug(now, stage){
+    if (!DEBUG || now - dbgT < 80) return;   // ~12Hz is plenty, and cheap
+    dbgT = now;
+    var range = (hiMark > loMark) ? hiMark - loMark : 0;
+    dEl.n.textContent     = lastN.toFixed(3);
+    dEl.phase.textContent = stage || (mode === 'timer' ? 'timer' : phase);
+    dEl.mark.style.left   = (lastN*100).toFixed(1) + '%';
+    dEl.lo.textContent    = num(loMark);
+    dEl.hi.textContent    = num(hiMark);
+    dEl.range.textContent = num(range);
+    dEl.cal.textContent   = calRange ? num(calRange) : '-';
+    dEl.floor.textContent = num(envFloor);
+    dEl.raw.textContent   = num(lastRaw);
+    dEl.swing.textContent = (lastSwing ? num(lastSwing) : '-') + ' / need ' + num(minRepSwing);
+    dEl.reps.textContent  = count;
+    dEl.rej.textContent   = rejSwing + '+' + rejFast;
+    dEl.fps.textContent   = fps ? fps.toFixed(0) : '-';
   }
 
   // ---- main loop ------------------------------------------------------
