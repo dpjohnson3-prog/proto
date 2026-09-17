@@ -1,0 +1,24 @@
+{
+  "name": "dawn-alarm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "sync": "npm run build && cap sync ios",
+    "ios": "npm run sync && cap open ios",
+    "verify:port": "node scripts/verify-port.mjs",
+    "port": "python3 scripts/port.py"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/preferences": "^8.0.1",
+    "vite": "^8.3.0"
+  }
+}

@@ -1,0 +1,150 @@
+/* Carried over verbatim from rep-counter.html. */
+  :root{
+    --night:#0B1026;
+    --horizon:#1E2A4F;
+    --ember:#FF6B35;
+    --gold:#FFC15E;
+    --signal:#4ECDC4;
+    --text:#E8ECF7;
+    --dim:#8794B5;
+    --danger:#FF5C7A;
+    --font:'Archivo','Helvetica Neue',Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--font);
+    background:var(--night);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* Intentionally dark in every theme: this is a 6am alarm screen.
+     Explicit background so it never inherits a light viewer surface. */
+  #dawn{
+    position:fixed;inset:0;z-index:0;
+    background:linear-gradient(180deg,var(--night) 0%,var(--horizon) 100%);
+    transition:opacity .6s linear;
+  }
+  #dawnWarm{
+    position:fixed;inset:0;z-index:0;opacity:0;
+    background:linear-gradient(180deg,#2A1B3D 0%,#6B3A5B 45%,var(--ember) 78%,var(--gold) 100%);
+    transition:opacity .5s linear;
+  }
+  @media (prefers-reduced-motion:reduce){
+    #dawn,#dawnWarm{transition:none}
+  }
+  .wrap{
+    position:relative;z-index:1;
+    min-height:100%;
+    display:flex;flex-direction:column;
+    padding:clamp(20px,5vw,40px);
+    max-width:640px;margin:0 auto;
+  }
+  .screen{display:none;flex:1;flex-direction:column}
+  .screen.on{display:flex}
+
+  h1{
+    font-size:clamp(28px,7vw,40px);
+    font-weight:800;letter-spacing:-.03em;line-height:1.05;
+    margin-bottom:10px;
+  }
+  .lede{color:var(--dim);font-size:16px;line-height:1.55;max-width:46ch;margin-bottom:28px}
+  .note{color:var(--dim);font-size:14px;line-height:1.5;max-width:52ch}
+
+  button{
+    font-family:var(--font);font-size:17px;font-weight:600;
+    border:none;border-radius:14px;padding:16px 22px;
+    background:var(--ember);color:#160B05;cursor:pointer;
+    min-height:56px;width:100%;
+  }
+  button:focus-visible{outline:3px solid var(--signal);outline-offset:3px}
+  button.ghost{background:transparent;color:var(--text);border:1.5px solid #33406B}
+  button.quiet{background:transparent;color:var(--dim);border:none;font-weight:400;
+    font-size:15px;text-decoration:underline;min-height:44px;padding:10px}
+  .row{display:flex;gap:12px;margin-top:14px}
+
+  .goal{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+  .goal label{color:var(--dim);font-size:15px}
+  .stepper{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .stepper button{width:52px;min-height:52px;padding:0;font-size:24px;background:#1B2545;color:var(--text)}
+  .stepper .val{
+    font-size:30px;font-weight:800;min-width:60px;text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* counting screen */
+  .count{
+    font-size:clamp(120px,40vw,220px);
+    font-weight:800;line-height:.85;letter-spacing:-.05em;
+    font-variant-numeric:tabular-nums;
+    text-align:center;margin:auto 0 0;
+  }
+  .countSub{text-align:center;color:var(--dim);font-size:18px;margin:12px 0 auto;letter-spacing:.01em}
+  .flash{animation:pop .28s ease-out}
+  @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.09)}100%{transform:scale(1)}}
+  @media (prefers-reduced-motion:reduce){.flash{animation:none}}
+
+  .scope{
+    border:1.5px solid #2B3763;border-radius:16px;
+    padding:14px;background:rgba(11,16,38,.55);margin-top:18px;
+  }
+  .scopeHead{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+  .scopeHead span{font-size:14px;color:var(--dim)}
+  .scopeHead .state{margin-left:auto;font-weight:600;color:var(--signal);font-size:14px}
+  canvas#trace{width:100%;height:84px;display:block}
+  #preview{
+    position:fixed;top:14px;right:14px;z-index:5;
+    width:84px;height:112px;border-radius:12px;overflow:hidden;
+    background:#000;border:1.5px solid #2B3763;display:none;
+  }
+  #preview.on{display:block}
+  #cam{width:100%;height:100%;object-fit:cover;display:block;transform:scaleX(-1)}
+  .banner{
+    background:rgba(78,205,196,.12);border:1.5px solid var(--signal);
+    border-radius:12px;padding:13px 15px;margin-bottom:22px;
+    font-size:15px;line-height:1.5;color:#CFF5F1;
+  }
+  .banner.hide{display:none}
+
+  .warn{
+    background:rgba(255,92,122,.13);border:1.5px solid var(--danger);
+    border-radius:12px;padding:12px 14px;margin-top:14px;
+    font-size:15px;line-height:1.5;color:#FFD3DC;
+  }
+  .warn.hide{display:none}
+
+  .escape{margin-top:18px;text-align:center}
+  .sheet{
+    position:fixed;inset:auto 0 0 0;z-index:10;
+    background:#141C38;border-radius:20px 20px 0 0;
+    padding:26px clamp(20px,5vw,32px) 32px;
+    max-width:640px;margin:0 auto;
+    transform:translateY(100%);transition:transform .25s ease-out;
+  }
+  .sheet.on{transform:translateY(0)}
+  @media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+  .sheet h2{font-size:22px;font-weight:800;margin-bottom:8px;letter-spacing:-.02em}
+  .sheet p{color:var(--dim);font-size:15px;line-height:1.55;margin-bottom:20px}
+  .sheet button{margin-bottom:10px}
+
+  .done{margin:auto 0;text-align:center}
+  .done .big{font-size:clamp(40px,11vw,64px);font-weight:800;letter-spacing:-.03em;line-height:1.05}
+  .done p{color:#3A2410;font-size:18px;margin-top:14px}
+  .done.warm .big{color:#160B05}
+
+  /* debug overlay — ?debug=1 only. pointer-events:none so it can never sit
+     between someone and an escape hatch. */
+  #dbg{
+    position:fixed;left:10px;bottom:10px;z-index:20;
+    display:none;pointer-events:none;
+    font:600 11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background:rgba(6,9,22,.88);border:1px solid #2B3763;border-radius:10px;
+    padding:8px 10px;color:#CFF5F1;min-width:184px;
+  }
+  #dbg.on{display:block}
+  #dbg b{color:var(--gold);font-weight:800;font-variant-numeric:tabular-nums}
+  #dbg .k{color:var(--dim);font-weight:400}
+  #dbgBar{position:relative;height:7px;border-radius:4px;margin:5px 0;background:#1B2545}
+  #dbgMark{position:absolute;top:-2px;bottom:-2px;width:3px;margin-left:-1.5px;
+    background:var(--ember);border-radius:2px;left:50%}

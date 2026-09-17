@@ -1,0 +1,9 @@
+{
+  "appId": "com.dpjohnson.dawnalarm",
+  "appName": "Dawn Alarm",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#0B1026"
+  }
+}

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Dawn Alarm</title>
+</head>
+<body>
+<div id="dawn"></div>
+<div id="dawnWarm"></div>
+<div id="preview"><video id="cam" playsinline muted autoplay></video></div>
+<div id="dbg" aria-hidden="true">
+  <div><span class="k">n </span><b id="dN">-</b><span class="k"> phase </span><b id="dPhase">-</b></div>
+  <div id="dbgBar"><i id="dbgMark"></i></div>
+  <div><span class="k">lo </span><b id="dLo">-</b><span class="k"> hi </span><b id="dHi">-</b></div>
+  <div><span class="k">range </span><b id="dRange">-</b><span class="k"> cal </span><b id="dCal">-</b></div>
+  <div><span class="k">floor </span><b id="dFloor">-</b><span class="k"> raw </span><b id="dRaw">-</b></div>
+  <div><span class="k">swing </span><b id="dSwing">-</b></div>
+  <div><span class="k">reps </span><b id="dReps">-</b><span class="k"> rej </span><b id="dRej">-</b><span class="k"> fps </span><b id="dFps">-</b></div>
+</div>
+
+<div class="wrap">
+
+  <!-- ALARM SETUP -->
+  <section class="screen on" id="sAlarm">
+    <h1>Push-ups to turn it off.</h1>
+    <p class="lede">Set a time and a number. When it goes off, the camera counts your reps &mdash; the alarm stops when you finish them.</p>
+
+    <div class="field">
+      <label for="alarmTime">Wake at</label>
+      <input type="time" id="alarmTime" value="06:30">
+    </div>
+
+    <div class="goal">
+      <label for="goalVal">Reps</label>
+      <div class="stepper">
+        <button id="minus" aria-label="Fewer reps">&minus;</button>
+        <div class="val" id="goalVal">10</div>
+        <button id="plus" aria-label="More reps">+</button>
+      </div>
+    </div>
+
+    <div class="banner hide" id="permWarn"></div>
+    <div class="warn hide" id="armWarn"></div>
+
+    <div style="margin-top:auto">
+      <button id="armBtn">Arm the alarm</button>
+      <button class="ghost" id="testBtn" style="margin-top:12px">Try it now, without waiting</button>
+      <p class="note" id="armState" style="margin-top:16px">Not armed.</p>
+      <p class="note" style="margin-top:10px">Counting runs entirely on your phone. No video leaves the device and nothing is recorded.</p>
+    </div>
+  </section>
+
+  <!-- RINGING -->
+  <section class="screen" id="sRing">
+    <div class="banner hide" id="embedWarn"></div>
+    <h1 id="ringTitle">Time to get up.</h1>
+    <p class="lede" id="ringLede">Prop the phone against something so it can see you from the side or the front.</p>
+    <div class="count" id="ringCount">10</div>
+    <div class="countSub">push-ups to turn it off</div>
+    <div class="warn hide" id="soundWarn"></div>
+    <div style="margin-top:auto">
+      <button id="startBtn">Start push-ups</button>
+      <button class="ghost" id="demoBtn" style="margin-top:12px">Run without the camera</button>
+      <div class="escape"><button class="quiet" id="ringEscape">I can&rsquo;t do this right now</button></div>
+    </div>
+  </section>
+
+  <section class="screen" id="sCal">
+    <h1 id="calTitle">Do two slow push-ups</h1>
+    <p class="lede" id="calLede">Go all the way down and all the way up. Take your time — this is just so it can see your range.</p>
+    <div class="count" id="calTimer">6</div>
+    <div class="countSub">seconds left</div>
+    <div class="scope">
+      <div class="scopeHead"><span>What the camera sees</span><span class="state" id="calState">watching</span></div>
+      <canvas id="traceCal" width="600" height="168"></canvas>
+    </div>
+    <div class="escape"><button class="quiet" id="skipCal">Skip this and use a timer instead</button></div>
+  </section>
+
+  <section class="screen" id="sCount">
+    <div class="count" id="countVal">0</div>
+    <div class="countSub" id="countSub">of 10</div>
+
+    <div class="scope">
+      <div class="scopeHead"><span>What the camera sees</span><span class="state" id="liveState">up</span></div>
+      <canvas id="trace" width="600" height="168"></canvas>
+    </div>
+
+    <div class="warn hide" id="stallWarn">
+      Not picking up much movement. Move your phone back so more of your body is in frame, or tap below to switch.
+    </div>
+
+    <div class="escape">
+      <button class="quiet" id="notWorking">It's not counting me</button>
+    </div>
+  </section>
+
+  <section class="screen" id="sDone">
+    <div class="done warm">
+      <div class="big" id="doneBig">Alarm off.</div>
+      <p id="doneSub">You're up.</p>
+    </div>
+    <div style="margin-top:auto">
+      <button id="againBtn">Run it again</button>
+    </div>
+  </section>
+</div>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <h2 id="sheetTitle">Let's get you out of this</h2>
+  <p>You should never be stuck doing reps a broken counter won't accept.</p>
+  <button id="recal">Recalibrate — I'll do two more slow reps</button>
+  <button class="ghost" id="toTimer">Switch to a 30-second hold instead</button>
+  <button class="ghost" id="bail">Just turn the alarm off</button>
+  <button class="quiet" id="closeSheet">Go back</button>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
