@@ -10,7 +10,9 @@
     "sync": "npm run build && cap sync ios",
     "ios": "npm run sync && cap open ios",
     "verify:port": "node scripts/verify-port.mjs",
-    "port": "python3 scripts/port.py"
+    "port": "python3 scripts/port.py",
+    "verify:safearea": "node scripts/verify-safearea.mjs",
+    "verify": "npm run verify:port && node scripts/verify-escapes.mjs && npm run verify:safearea"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",
@@ -20,5 +22,8 @@
     "@capacitor/local-notifications": "^8.3.1",
     "@capacitor/preferences": "^8.0.1",
     "vite": "^8.3.0"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
   }
 }

@@ -151,10 +151,16 @@ watch `range` settle below `cal`.
 `src/counter.js` is **generated**, not hand-written:
 
 ```sh
-npm run port           # regenerate from ../rep-counter.html
-npm run verify:port    # 215 synthetic scenarios, must stay 0 missed / 0 phantom
-node scripts/verify-escapes.mjs
+npm run port     # regenerate counter.js + styles.css from ../rep-counter.html
+npm run verify   # counting + escape hatches + safe-area insets
 ```
+
+`src/styles.css` is generated too. The iOS safe-area insets live in
+`scripts/port.py` as four documented CSS edits, **not** as hand edits to
+`styles.css` — editing that file directly works until the next `npm run port`
+silently reverts it. Each edit keeps the prototype's declaration and adds an
+`env(safe-area-inset-*)` override after it, so the original value is untouched
+and remains the fallback. `#dawn`/`#dawnWarm` are deliberately left full-bleed.
 
 `scripts/port.py` applies exactly 9 documented edits to the prototype's script
 and asserts each one matches exactly once — so it fails loudly rather than
@@ -173,6 +179,6 @@ src/counter.js   GENERATED — ported detection logic, do not hand-edit
 src/alarm.js     notification scheduling, permissions, the iOS workarounds
 src/storage.js   persisted settings (@capacitor/preferences)
 src/main.js      app shell: screens, alarm wiring, audio, wake lock
-scripts/port.py  regenerates counter.js from the prototype
+scripts/port.py  regenerates counter.js AND styles.css from the prototype
 ios-assets/      where the alarm sound goes (TODO)
 ```
