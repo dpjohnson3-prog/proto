@@ -229,6 +229,9 @@ APP_CSS = """
   #sRing .count{font-size:clamp(90px,30vw,160px);margin:auto 0 0}
   #sRing .countSub{margin-bottom:auto}
   .note.armed{color:var(--signal)}
+  /* Persistent, not a toast: this is the line someone comes back to look for
+     at 06:45 when they are working out why nothing rang. */
+  .note.caution{color:var(--gold)}
 
   /* Back to the alarm screen. Shown ONLY for a "Try it now" test run: when a
      real alarm is ringing this screen is the dismissal gate, and a one-tap

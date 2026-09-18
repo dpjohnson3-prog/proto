@@ -7,7 +7,7 @@ const A = await import(path.join(ROOT, 'src/alarm.js'));
 const { RING_BURST, BURST_GAP_MIN, DAYS_AHEAD, IOS_PENDING_CAP, RESERVED_SLOTS,
         WARN_LEAD_DAYS, WARN_HOUR, RING_GRACE_MIN,
         plan, buildNotifications, shouldRing, inRingWindow, dayKey,
-        armedThrough, slotsUsed, backArrowVisible } = A;
+        armedThrough, slotsUsed, backArrowVisible, RINGER_ADVISORY } = A;
 
 const HTML = fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 const IDS = new Set([...HTML.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
@@ -217,6 +217,24 @@ check('the clearance class toggles with the arrow',
   /classList\.toggle\('hide', !showBack\)/.test(main));
 check('the clearance rule exists in the generated CSS',
   fs.readFileSync(path.join(ROOT, 'src/styles.css'), 'utf8').includes('#sRing.hasBack'));
+
+console.log('\n== ringer advisory (no reliable silent-switch detection exists) ==');
+check('an advisory exists', typeof RINGER_ADVISORY === 'string' && RINGER_ADVISORY.length > 40);
+check('it names the silent switch', /silent switch/i.test(RINGER_ADVISORY));
+check('it names the volume', /volume/i.test(RINGER_ADVISORY));
+check('it does not claim to have checked the ringer',
+  !/(your ringer is|currently (on|off)|detected)/i.test(RINGER_ADVISORY));
+const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+check('the advisory has a permanent slot on the alarm screen', idx.includes('id="ringerNote"'));
+check('it is not a dismissible toast (nothing can hide it)',
+  !/ringerNote[^\n]*(hide|dismiss|close)/i.test(main) &&
+  !/(hide|dismiss|close)[^\n]*ringerNote/i.test(main));
+check('it is shown whenever the alarm is armed',
+  /\$\('ringerNote'\)\.textContent = alarm\.RINGER_ADVISORY/.test(main));
+check('and cleared when disarmed', /\$\('ringerNote'\)\.textContent = ''/.test(main));
+// Arming a silent alarm is allowed; being surprised by it is not.
+const armBlock = main.slice(main.indexOf("$('armBtn').onclick"), main.indexOf("$('testBtn').onclick"));
+check('the advisory never blocks arming', !armBlock.includes('RINGER_ADVISORY'));
 
 console.log('\n== top-up guard (must not cancel notifications about to fire) ==');
 check('inRingWindow is true at the first burst',

@@ -183,6 +183,39 @@ export function buildNotifications(hhmm, goal, from = new Date(), satisfiedKey =
   };
 }
 
+// ---------------------------------------------------------------------------
+// The ringer advisory.
+//
+// Investigated whether the silent switch or ringer volume can be READ from a
+// Capacitor app, so this could warn only when actually muted. They cannot,
+// reliably:
+//
+//  - iOS exposes no public API for the ring/silent switch. Every plugin that
+//    claims to detect it (@capgo/capacitor-mute, @capawesome/capacitor-silent-
+//    mode) uses the same heuristic: play a short silent sound and time how long
+//    it takes. capawesome's own docs say it "may be inaccurate while other
+//    audio is playing or when the audio session category overrides the switch";
+//    capgo's note that their underlying Mute library "is not configured as
+//    Apple expect anymore" since Xcode 14.
+//  - Ringer volume is not readable at all. AVAudioSession.outputVolume reports
+//    the media volume, which is a different slider from the one that governs
+//    notification sounds.
+//  - Decisively: on iOS the state can only be sampled while the app is in the
+//    FOREGROUND. capawesome's listener polls on a timer and pauses in the
+//    background. The alarm fires when the app is closed, so even a perfect
+//    reading at arm time says nothing about the switch position at 06:30 -
+//    which is the only moment that matters.
+//
+// A detector that is wrong in either direction is worse than none: "your ringer
+// is on" when it is off is exactly the silent failure this is meant to prevent.
+// So this is a plain, permanent advisory instead, shown for as long as the
+// alarm is armed. It never blocks arming - arming a silent alarm is allowed,
+// being surprised by it is not.
+export const RINGER_ADVISORY =
+  'Leave the ringer on. This rings through Focus and Do Not Disturb, but the ' +
+  'silent switch and the volume still win - iOS gives apps no way to ring ' +
+  'past those, and no way to check them while the app is closed.';
+
 // Whether the ring screen may offer a one-tap way back to alarm setup.
 // Only a test run may. When a real alarm is ringing, this screen IS the
 // dismissal gate: a back arrow would reduce the rep requirement to a tap. The

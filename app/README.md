@@ -30,6 +30,30 @@ The Clock app's alarms use private API. A third-party app gets
 medical and safety apps) is the only thing that overrides the silent switch and
 volume. An alarm app is unlikely to be approved.
 
+### The ringer is the one thing nothing gets past
+
+`timeSensitive` beats Focus and Do Not Disturb. It does **not** beat the
+physical silent switch or the volume slider, and neither does anything else
+short of Critical Alerts.
+
+I checked whether the app could at least *warn* you when the ringer is off.
+It cannot, reliably:
+
+| | |
+|---|---|
+| Silent switch | **No public iOS API.** Every plugin that claims it (`@capgo/capacitor-mute`, `@capawesome/capacitor-silent-mode`) plays a short silent sound and times it. capawesome's own docs: "may be inaccurate while other audio is playing or when the audio session category overrides the switch". capgo's: their underlying `Mute` library "is not configured as Apple expect anymore" since Xcode 14. |
+| Ringer volume | **Not readable.** `AVAudioSession.outputVolume` is the *media* volume — a different slider from the one governing notification sounds. |
+| Timing | **Foreground only.** capawesome's listener polls on a timer and pauses in the background. The alarm fires with the app closed, so a reading taken at arm time says nothing about the switch at 06:30. |
+
+That last row is decisive: even a perfect detector answers the wrong question.
+And a detector that is wrong in either direction is worse than none — "your
+ringer is on" when it is off is precisely the silent failure it would exist to
+prevent.
+
+So the app carries a **permanent advisory on the armed state** instead: not a
+toast, because it has to still be there later when you are working out why
+nothing rang. It never blocks arming.
+
 **What I did use:** `interruptionLevel: 'timeSensitive'`. It breaks through most
 Focus modes, and unlike Critical Alerts it's a self-serve Xcode capability with
 no approval process. **You must enable it:** Xcode → Signing & Capabilities →

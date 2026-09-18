@@ -131,6 +131,7 @@ function renderArmState(){
     el.textContent = 'Not armed.';
     el.classList.remove('armed');
     $('armThrough').textContent = '';
+    $('ringerNote').textContent = '';
     return;
   }
   const [h, m] = settings.time.split(':').map(Number);
@@ -140,6 +141,9 @@ function renderArmState(){
     (settings.goal === 1 ? ' push-up' : ' push-ups') + '.';
   el.classList.add('armed');
   renderArmedThrough();
+  // Permanent while armed. Deliberately not a dismissible toast: it has to
+  // still be here later, when someone is working out why nothing rang.
+  $('ringerNote').textContent = alarm.RINGER_ADVISORY;
 }
 
 async function enterRing({ real = false, morning = null } = {}){
