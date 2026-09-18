@@ -20,19 +20,21 @@ let activeRing = null;
 // ---------------------------------------------------------------------------
 // Alarm sound.
 // ---------------------------------------------------------------------------
-// TODO(sound): no audio file ships with this repo on purpose. Drop a real one
-// at app/public/sounds/alarm.wav (in-app playback) AND ios/App/App/alarm.wav
-// (the notification sound). See ios-assets/sounds/README.md for the format
-// rules. Until then the ring screen says so out loud rather than failing quietly.
-const ALARM_SRC = '/sounds/alarm.wav';
-let audio = null;
+// The ring screen plays the same sound the notification uses. Resolved against
+// document.baseURI because the build uses base './'. Regenerate the files with
+// scripts/make-sounds.py.
+function alarmSrc(){
+  return new URL(alarm.soundUrl(settings.sound), document.baseURI).href;
+}
+let audio = null, audioFor = null, preview = null, previewTimer = null;
 
 // iOS will not start audio without a user gesture. Arming is a gesture, so we
 // use it to unlock playback for the session; if the app was relaunched cold by
 // the notification, the "Start push-ups" tap is the next gesture available.
 function primeAudio(){
-  if (audio) return;
-  audio = new Audio(ALARM_SRC);
+  if (audio && audioFor === settings.sound) return;
+  audio = new Audio(alarmSrc());
+  audioFor = settings.sound;
   audio.loop = true;
   audio.preload = 'auto';
   audio.volume = 1.0;
@@ -40,13 +42,18 @@ function primeAudio(){
 }
 
 function startRinging(){
-  if (!audio){ audio = new Audio(ALARM_SRC); audio.loop = true; }
+  stopPreview();
+  if (!audio || audioFor !== settings.sound){
+    audio = new Audio(alarmSrc());
+    audioFor = settings.sound;
+    audio.loop = true;
+  }
   audio.currentTime = 0;
   audio.play().catch((err) => {
     const w = $('soundWarn');
     w.classList.remove('hide');
     w.textContent = (err && err.name === 'NotSupportedError')
-      ? 'No alarm sound installed yet — add app/public/sounds/alarm.wav (see ios-assets/sounds/README.md).'
+      ? 'That sound file is missing — run scripts/make-sounds.py to regenerate it.'
       : 'iOS would not start the sound without a tap. The notification itself still made noise.';
   });
 }
@@ -83,11 +90,60 @@ function showAlarmScreen(){
   releaseWakeLock();
   stopRinging();
   counter.reset();
+  stopPreview();
   $('alarmTime').value = settings.time;
+  renderSounds();
   $('goalVal').textContent = settings.goal;
   $('armBtn').textContent = settings.armed ? 'Disarm' : 'Arm the alarm';
   renderArmState();
   counter.show('alarm');
+}
+
+// ---------------------------------------------------------------------------
+// Sound picker
+// ---------------------------------------------------------------------------
+function stopPreview(){
+  if (previewTimer){ clearTimeout(previewTimer); previewTimer = null; }
+  if (preview){ try { preview.pause(); } catch (e){} preview = null; }
+  $('soundPreview').classList.remove('playing');
+  $('soundPreview').textContent = 'Preview';
+}
+
+function renderSounds(){
+  const wrap = $('soundChips');
+  wrap.textContent = '';
+  for (const s of alarm.SOUNDS){
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.textContent = s.label;
+    b.setAttribute('aria-pressed', String(s.id === settings.sound));
+    b.onclick = async () => {
+      settings.sound = s.id;
+      audio = null; audioFor = null;      // next ring rebuilds with the new file
+      renderSounds();
+      playPreview();                      // hear it immediately
+      // Every pending notification carries its sound, so all of them have to be
+      // rebuilt. arm() skips any morning already satisfied, so this cannot
+      // resurrect one that has been dismissed.
+      await persistAndMaybeReschedule();
+    };
+    wrap.appendChild(b);
+  }
+  $('soundNote').textContent = alarm.soundOf(settings.sound).note;
+}
+
+function playPreview(){
+  stopPreview();
+  preview = new Audio(alarmSrc());
+  preview.loop = false;
+  $('soundPreview').classList.add('playing');
+  $('soundPreview').textContent = 'Stop';
+  preview.play().catch(() => { stopPreview(); });
+  preview.onended = stopPreview;
+  // The files run 20s so they are long enough for a notification; a preview
+  // only needs a few seconds of it.
+  previewTimer = setTimeout(stopPreview, 6000);
 }
 
 // The lapse warning is informational: tapping it must open the app, not start
@@ -114,7 +170,7 @@ function renderArmedThrough(){
       alarm.DAYS_AHEAD + ' mornings at a time.';
     return;
   }
-  const built = alarm.buildNotifications(settings.time, settings.goal, new Date(), null);
+  const built = alarm.buildNotifications(settings.time, settings.goal, new Date(), null, settings.sound);
   if (!built.through){ el.textContent = ''; return; }
   const day = built.through.toLocaleDateString([], {
     weekday: 'long', month: 'short', day: 'numeric'
@@ -197,7 +253,7 @@ async function persistAndMaybeReschedule(){
   renderArmState();
   // An armed alarm whose time or goal just changed has to be rebuilt, or it
   // would still ring at the old time with the old number.
-  if (settings.armed && isNative) await alarm.arm(settings.time, settings.goal);
+  if (settings.armed && isNative) await alarm.arm(settings.time, settings.goal, settings.sound);
 }
 
 $('armBtn').onclick = async () => {
@@ -241,7 +297,8 @@ $('armBtn').onclick = async () => {
     return;
   }
 
-  const first = await alarm.arm(settings.time, settings.goal);
+  const built = await alarm.arm(settings.time, settings.goal, settings.sound);
+  const first = built && built.first;
   settings.armed = true;
   await saveSettings(settings);
   renderArmState();
@@ -253,6 +310,12 @@ $('armBtn').onclick = async () => {
       alarm.RING_BURST + ' times a minute apart rather than continuously.';
   }
   $('armBtn').textContent = 'Disarm';
+};
+
+$('soundPreview').onclick = () => {
+  if (preview) { stopPreview(); return; }
+  primeAudio();          // the tap doubles as the gesture that unlocks audio
+  playPreview();
 };
 
 $('testBtn').onclick = () => { primeAudio(); enterRing({ real: false }); };
@@ -316,7 +379,7 @@ async function boot(){
       if (!isNative || !ring || !ring.real) return;
       await alarm.markSatisfied(ring.morning);
       // Now this morning is settled, refill the window to its full depth.
-      if (settings.armed) await alarm.topUp(settings.time, settings.goal);
+      if (settings.armed) await alarm.topUp(settings.time, settings.goal, settings.sound);
       renderArmState();
     }
   });
@@ -334,10 +397,10 @@ async function boot(){
     });
 
     App.addListener('appStateChange', async ({ isActive }) => {
-      if (isActive && settings.armed) await alarm.topUp(settings.time, settings.goal);
+      if (isActive && settings.armed) await alarm.topUp(settings.time, settings.goal, settings.sound);
     });
 
-    if (settings.armed) await alarm.topUp(settings.time, settings.goal);
+    if (settings.armed) await alarm.topUp(settings.time, settings.goal, settings.sound);
   }
 
   showAlarmScreen();

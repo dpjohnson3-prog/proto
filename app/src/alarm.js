@@ -53,10 +53,34 @@ export const IOS_PENDING_CAP = 64;
 // are about to fire are never cancelled out from under a live ring.
 export const RING_GRACE_MIN = 45;
 
-// TODO(sound): drop your alarm audio in as ios/App/App/alarm.wav and keep this
-// name in sync. See ios-assets/sounds/README.md. Until that file exists iOS
-// falls back to the default notification sound.
-export const ALARM_SOUND = 'alarm.wav';
+// ---------------------------------------------------------------------------
+// Sounds.
+//
+// All five are synthesised by scripts/make-sounds.py and committed, so the repo
+// owns them outright with no licensing question. They exist twice over, because
+// iOS treats the two uses as unrelated things:
+//   ios/App/App/<id>.wav    bundle root, named per-notification at schedule time
+//   public/sounds/<id>.wav  web asset, played by the ring screen
+//
+// A notification sound CANNOT be added at runtime - it has to be in the bundle
+// at build time, which is why the set is fixed here rather than downloadable.
+// scripts/add-ios-sounds.cjs is what puts them in the iOS target; without that
+// they never reach the bundle and iOS silently uses the default instead.
+export const SOUNDS = [
+  { id: 'dawn',     label: 'Dawn',     note: 'A slow swell. Barely there.' },
+  { id: 'chime',    label: 'Chime',    note: 'Three soft bell tones.' },
+  { id: 'pulse',    label: 'Pulse',    note: 'An even, unhurried pulse.' },
+  { id: 'cascade',  label: 'Cascade',  note: 'A descending figure. Harder to ignore.' },
+  { id: 'reveille', label: 'Reveille', note: 'Quick and repeating. The insistent one.' }
+];
+export const DEFAULT_SOUND = 'chime';
+
+export function isSound(id){ return SOUNDS.some(s => s.id === id); }
+export function soundOf(id){ return SOUNDS.find(s => s.id === id) || SOUNDS.find(s => s.id === DEFAULT_SOUND); }
+// The filename iOS is given at schedule time. Bundle root, so no directory.
+export function soundFile(id){ return soundOf(id).id + '.wav'; }
+// The URL the ring screen plays. Relative, because the built page uses base './'.
+export function soundUrl(id){ return 'sounds/' + soundOf(id).id + '.wav'; }
 
 const RING_ID_BASE = 42000;   // one id per burst
 const WARN_ID      = 41000;   // distinct range: never treated as a ring
@@ -135,7 +159,8 @@ export function inRingWindow(hhmm, now = new Date()){
   return now.getTime() >= start.getTime() && now.getTime() < end;
 }
 
-export function buildNotifications(hhmm, goal, from = new Date(), satisfiedKey = null){
+export function buildNotifications(hhmm, goal, from = new Date(), satisfiedKey = null,
+                                   soundId = DEFAULT_SOUND){
   const mornings = plan(hhmm, from, satisfiedKey);
   const reps = goal + (goal === 1 ? ' push-up' : ' push-ups');
   const notifications = [];
@@ -147,7 +172,9 @@ export function buildNotifications(hhmm, goal, from = new Date(), satisfiedKey =
         title: 'Time to get up',
         body: reps + ' to turn it off.',
         schedule: { at, allowWhileIdle: true },
-        sound: ALARM_SOUND,
+        // Baked in per notification: changing the chosen sound means every one
+        // of these has to be rebuilt, which arm() does.
+        sound: soundFile(soundId),
         // 'timeSensitive' breaks through most Focus modes and is a self-serve
         // Xcode capability (Signing & Capabilities -> Time Sensitive
         // Notifications). It is NOT 'critical': that one needs the Critical
@@ -250,9 +277,12 @@ async function cancelOurs(){
   } catch (e){}
 }
 
-export async function arm(hhmm, goal, now = new Date()){
+export async function arm(hhmm, goal, soundId = DEFAULT_SOUND, now = new Date()){
+  // Reads the satisfied morning first, so a rebuild - including one triggered
+  // purely by changing the sound - can never resurrect a morning already
+  // dismissed. plan() skips it entirely.
   const satisfiedKey = await loadSatisfied();
-  const built = buildNotifications(hhmm, goal, now, satisfiedKey);
+  const built = buildNotifications(hhmm, goal, now, satisfiedKey, soundId);
   await cancelOurs();
   if (built.notifications.length){
     await LocalNotifications.schedule({ notifications: built.notifications });
@@ -289,11 +319,11 @@ export async function satisfiedKey(){ return loadSatisfied(); }
 // Rebuild the rolling window. Safe on every app open, with one exception: if a
 // ring for an unsatisfied morning could still be live, leave the schedule
 // alone rather than cancel and re-add notifications that are about to fire.
-export async function topUp(hhmm, goal, now = new Date()){
+export async function topUp(hhmm, goal, soundId = DEFAULT_SOUND, now = new Date()){
   const key = dayKey(now);
   const satisfied = await loadSatisfied();
   if (satisfied !== key && inRingWindow(hhmm, now)) return null;
-  return arm(hhmm, goal, now);
+  return arm(hhmm, goal, soundId, now);
 }
 
 export async function pendingCount(){

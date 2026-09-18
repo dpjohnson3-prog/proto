@@ -4,7 +4,7 @@ import { Preferences } from '@capacitor/preferences';
 
 const KEY = 'dawn.alarm';
 
-export const DEFAULTS = { time: '06:30', goal: 10, armed: false };
+export const DEFAULTS = { time: '06:30', goal: 10, armed: false, sound: 'chime' };
 
 export async function loadSettings(){
   try {

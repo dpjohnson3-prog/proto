@@ -7,7 +7,8 @@ const A = await import(path.join(ROOT, 'src/alarm.js'));
 const { RING_BURST, BURST_GAP_MIN, DAYS_AHEAD, IOS_PENDING_CAP, RESERVED_SLOTS,
         WARN_LEAD_DAYS, WARN_HOUR, RING_GRACE_MIN,
         plan, buildNotifications, shouldRing, inRingWindow, dayKey,
-        armedThrough, slotsUsed, backArrowVisible, RINGER_ADVISORY } = A;
+        armedThrough, slotsUsed, backArrowVisible, RINGER_ADVISORY,
+        SOUNDS, DEFAULT_SOUND, soundFile, soundUrl, soundOf, isSound } = A;
 
 const HTML = fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 const IDS = new Set([...HTML.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
@@ -235,6 +236,80 @@ check('and cleared when disarmed', /\$\('ringerNote'\)\.textContent = ''/.test(m
 // Arming a silent alarm is allowed; being surprised by it is not.
 const armBlock = main.slice(main.indexOf("$('armBtn').onclick"), main.indexOf("$('testBtn').onclick"));
 check('the advisory never blocks arming', !armBlock.includes('RINGER_ADVISORY'));
+
+console.log('\n== alarm sounds ==');
+check('there are 4-6 options', SOUNDS.length >= 4 && SOUNDS.length <= 6, `${SOUNDS.length}`);
+check('ids are unique', new Set(SOUNDS.map(s => s.id)).size === SOUNDS.length);
+check('each has a label and a description',
+  SOUNDS.every(s => s.label && s.note && s.note.length > 8));
+check('the default is one of them', isSound(DEFAULT_SOUND));
+check('an unknown id falls back rather than throwing', soundOf('nope').id === DEFAULT_SOUND);
+
+// iOS resolves a notification sound at the BUNDLE ROOT. A path with a
+// directory in it silently falls back to the default sound.
+check('soundFile() is a bare filename, no directory',
+  SOUNDS.every(s => !soundFile(s.id).includes('/')));
+check('soundFile() is a .wav', SOUNDS.every(s => soundFile(s.id).endsWith('.wav')));
+check('soundUrl() is relative (the build uses base ./)',
+  SOUNDS.every(s => !soundUrl(s.id).startsWith('/')));
+
+// Every sound must exist in BOTH places, and satisfy Apple's format rules.
+function wavInfo(p){
+  const b = fs.readFileSync(p);
+  if (b.toString('latin1', 0, 4) !== 'RIFF' || b.toString('latin1', 8, 12) !== 'WAVE') return null;
+  const fmt = b.indexOf('fmt ', 0, 'latin1');
+  const audioFormat = b.readUInt16LE(fmt + 8);
+  const channels = b.readUInt16LE(fmt + 10);
+  const rate = b.readUInt32LE(fmt + 12);
+  const bits = b.readUInt16LE(fmt + 22);
+  const data = b.indexOf('data', fmt, 'latin1');
+  const bytes = b.readUInt32LE(data + 4);
+  return { audioFormat, channels, rate, bits, seconds: bytes / (rate * channels * bits / 8) };
+}
+for (const s of SOUNDS){
+  for (const [where, p] of [['web', path.join(ROOT, 'public/sounds', s.id + '.wav')],
+                            ['bundle', path.join(ROOT, 'ios/App/App', s.id + '.wav')]]){
+    if (!fs.existsSync(p)){ check(`${s.id} exists (${where})`, false, p); continue; }
+    const w = wavInfo(p);
+    check(`${s.id} (${where}) is linear-PCM wav under 30s`,
+      !!w && w.audioFormat === 1 && w.bits === 16 && w.seconds < 30,
+      w ? `${w.seconds.toFixed(1)}s ${w.bits}-bit fmt=${w.audioFormat}` : 'unreadable');
+  }
+}
+check('the generator is committed', fs.existsSync(path.join(ROOT, 'scripts/make-sounds.py')));
+check('the iOS target script is committed', fs.existsSync(path.join(ROOT, 'scripts/add-ios-sounds.cjs')));
+
+console.log('\n== changing the sound rebuilds every pending notification ==');
+const quiet = buildNotifications('06:30', 10, EVE, null, 'dawn');
+const loud  = buildNotifications('06:30', 10, EVE, null, 'reveille');
+check('every ring carries the chosen sound',
+  quiet.rings.every(r => r.sound === 'dawn.wav'), `${quiet.rings.length} rings`);
+check('...and changing it changes all of them, not just the next',
+  loud.rings.length === quiet.rings.length && loud.rings.every(r => r.sound === 'reveille.wav'),
+  `${loud.rings.length} rings rebuilt`);
+check('the lapse warning stays silent whatever is chosen',
+  !loud.notifications.find(n => n.extra.kind === 'warn').sound);
+
+// The exact bug class fixed last round: a rebuild must not resurrect a morning
+// already dismissed. Changing the sound IS a rebuild.
+const afterReps = buildNotifications('06:30', 10, new Date('2026-03-01T06:40:00'),
+                                     '2026-03-01', 'reveille');
+check('a sound change cannot resurrect a satisfied morning',
+  afterReps.rings.every(r => r.extra.morning !== '2026-03-01'));
+check('...while still re-sounding every other morning',
+  afterReps.rings.length > 0 && afterReps.rings.every(r => r.sound === 'reveille.wav'));
+check('arm() reads the satisfied morning before rebuilding',
+  /loadSatisfied\(\)[\s\S]{0,200}buildNotifications/.test(
+    fs.readFileSync(path.join(ROOT, 'src/alarm.js'), 'utf8')));
+
+console.log('\n== the picker ==');
+check('the picker is on the alarm screen', idx.includes('id="soundChips"'));
+check('it has a preview control', idx.includes('id="soundPreview"'));
+check('the choice is persisted with the other settings',
+  fs.readFileSync(path.join(ROOT, 'src/storage.js'), 'utf8').includes("sound: 'chime'"));
+check('choosing a sound re-schedules', /settings\.sound = s\.id[\s\S]{0,400}persistAndMaybeReschedule/.test(main));
+check('the ring screen plays the chosen sound too', /alarm\.soundUrl\(settings\.sound\)/.test(main));
+check('preview stops before a real ring starts', /function startRinging[\s\S]{0,120}stopPreview\(\)/.test(main));
 
 console.log('\n== top-up guard (must not cancel notifications about to fire) ==');
 check('inRingWindow is true at the first burst',

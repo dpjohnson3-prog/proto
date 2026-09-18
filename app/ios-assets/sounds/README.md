@@ -1,40 +1,55 @@
-# Alarm sound — NOT INCLUDED
+# Alarm sounds
 
-**TODO: drop your alarm audio file here and in the two places listed below.**
-
-No audio ships with this repo on purpose. A placeholder alarm sound is worse
-than none: it gets shipped by accident, and you find out at 6am.
-
-You need the *same* sound in two places, because iOS treats them separately.
-
-## 1. Notification sound (the one that rings when the app is closed)
-
-- Put the file at `ios/App/App/alarm.wav`.
-- Add it to the **App** target in Xcode (drag into the project, tick
-  "Copy items if needed" and the App target) or it will not be in the bundle.
-- Keep the filename in sync with `ALARM_SOUND` in `src/alarm.js`.
-
-Apple's constraints on notification sounds:
-
-| Constraint | Value |
-|---|---|
-| Formats | Linear PCM, MA4, µ-law, a-law — packaged as `.caf`, `.wav` or `.aiff` |
-| **Max length** | **30 seconds.** Longer files are ignored and you get the *default* sound |
-| Location | Bundle root (or `Library/Sounds/`), not a subfolder |
-
-Convert with:
+**These are generated, not sourced.** `scripts/make-sounds.py` synthesises all
+five from sine partials — no samples, no clips, no licensing question if this
+ever ships paid. Regenerate any time:
 
 ```sh
-afconvert -f WAVE -d LEI16@44100 -c 1 source.mp3 alarm.wav
+npm run sounds     # make-sounds.py, then add-ios-sounds.cjs
 ```
 
-## 2. In-app sound (when the app is already open)
+## Where they live, and why twice
 
-- Put the same file at `app/public/sounds/alarm.wav`.
-- Vite copies `public/` into the build, so it lands at `/sounds/alarm.wav`,
-  which is what `ALARM_SRC` in `src/main.js` loads.
-- The 30-second cap does **not** apply here — this one loops until the set is
-  finished, so a short loopable clip works best.
+iOS treats the two uses as completely unrelated:
 
-Until both files exist: the notification falls back to the iOS default sound,
-and the ring screen shows a visible warning instead of failing silently.
+| Path | Used by | Committed |
+|---|---|---|
+| `public/sounds/<id>.wav` | the ring screen's in-app audio | yes |
+| `ios/App/App/<id>.wav` | the notification sound | yes |
+
+Both are committed on purpose. If the iOS copies were generated-on-demand, a
+fresh clone would build an app whose notifications fall back to the default
+sound — silently, which is the failure mode this app keeps trying not to have.
+
+## Apple's rules these files satisfy
+
+| Rule | Here |
+|---|---|
+| Under 30 seconds | 20.0s |
+| Linear PCM / MA4 / µ-law / a-law, as `.caf` / `.wav` / `.aiff` | 16-bit linear PCM `.wav`, 22.05 kHz mono |
+| At the bundle root, not a subdirectory | `ios/App/App/*.wav`, added to the App target |
+| Named per-notification at schedule time | `soundFile(id)` in `src/alarm.js` |
+
+That last rule is the sharp edge: the sound is baked into each scheduled
+notification, and there are 56 pending. Changing the selected sound rebuilds
+all of them — `arm()` does this, and skips any morning already satisfied so a
+rebuild cannot resurrect a dismissed alarm.
+
+## Target membership
+
+A `.wav` sitting in `ios/App/App/` is **not** in the bundle unless it is a
+member of the App target. `scripts/add-ios-sounds.cjs` does that, using the
+`xcode` pbxproj parser rather than hand-patching. It is idempotent and its
+diff is purely additive. Re-run it after adding a sound.
+
+## The set
+
+| id | character |
+|---|---|
+| `dawn` | slow swell on a fifth, barely there |
+| `chime` | three struck bell tones, decaying — the default |
+| `pulse` | even, unhurried pulses |
+| `cascade` | descending four-note figure |
+| `reveille` | repeated triplet, quick and bright |
+
+To re-voice them, edit the functions in `scripts/make-sounds.py` and re-run.

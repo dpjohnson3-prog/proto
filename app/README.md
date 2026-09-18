@@ -119,6 +119,24 @@ Two changes make "armed" stop being a lie:
 >
 > Neither is built. Ask before committing to either.
 
+### Alarm sounds
+
+Five, gentle to insistent: `dawn`, `chime` (default), `pulse`, `cascade`,
+`reveille`. All synthesised by `scripts/make-sounds.py` and committed, so the
+repo owns them outright — no samples, no licensing question if this ships paid.
+`npm run sounds` regenerates them and re-adds them to the iOS target.
+
+A notification sound **cannot be added at runtime** — it has to be in the
+bundle at build time, which is why the set is fixed rather than downloadable.
+It also has to be at the bundle root and a member of the App target, or iOS
+silently substitutes the default; `scripts/add-ios-sounds.cjs` handles that
+with a real pbxproj parser. See `ios-assets/sounds/README.md`.
+
+The sharp edge: **the sound is baked into each scheduled notification**, and
+there are 56 pending. Changing the choice rebuilds all of them via `arm()`,
+which reads the satisfied morning first and skips it — so a sound change cannot
+resurrect a morning already dismissed.
+
 ### What counts as dismissing the alarm
 
 A morning is satisfied **only when a set is completed** — reps finished, the
@@ -272,6 +290,10 @@ Set the alarm 2 minutes out, lock the phone, wait for it to ring.
 
 | Test | Expected |
 |---|---|
+| Pick each sound, tap Preview | Each plays, and sounds distinct |
+| Pick a sound, then let a real alarm ring | The notification uses **that** sound, not the default |
+| Change the sound while armed, then ring | Still the newly chosen one (all 56 were rebuilt) |
+| Do reps, then change the sound, then wait | That morning does **not** start ringing again |
 | Real alarm rings, look at the ring screen | **No back arrow** in the top-left |
 | *Try it now*, look at the ring screen | Back arrow present, clear of the notch |
 | Back out of a test run, then check the alarm screen | Still armed, same ring-through date |

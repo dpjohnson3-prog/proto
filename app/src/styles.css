@@ -193,6 +193,27 @@
      at 06:45 when they are working out why nothing rang. */
   .note.caution{color:var(--gold)}
 
+  /* Sound picker. Chips wrap rather than scroll, so every option is reachable
+     without a swipe - this gets used half asleep. */
+  .soundPick{margin-bottom:24px}
+  .soundHead{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .soundHead label{color:var(--dim);font-size:15px}
+  button.preview{
+    margin-left:auto;width:auto;min-height:38px;padding:8px 16px;
+    font-size:14px;font-weight:600;border-radius:10px;
+    background:transparent;color:var(--signal);border:1.5px solid #2B3763;
+  }
+  button.preview.playing{background:rgba(78,205,196,.14);border-color:var(--signal)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  button.chip{
+    width:auto;min-height:44px;padding:10px 15px;
+    font-size:15px;font-weight:600;border-radius:11px;
+    background:#1B2545;color:var(--text);border:1.5px solid transparent;
+  }
+  button.chip[aria-pressed="true"]{
+    background:rgba(255,107,53,.16);border-color:var(--ember);color:var(--gold);
+  }
+
   /* Back to the alarm screen. Shown ONLY for a "Try it now" test run: when a
      real alarm is ringing this screen is the dismissal gate, and a one-tap
      exit would make the rep requirement meaningless. The escape-hatch sheet
