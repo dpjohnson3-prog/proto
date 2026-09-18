@@ -7,7 +7,7 @@ const A = await import(path.join(ROOT, 'src/alarm.js'));
 const { RING_BURST, BURST_GAP_MIN, DAYS_AHEAD, IOS_PENDING_CAP, RESERVED_SLOTS,
         WARN_LEAD_DAYS, WARN_HOUR, RING_GRACE_MIN,
         plan, buildNotifications, shouldRing, inRingWindow, dayKey,
-        armedThrough, slotsUsed } = A;
+        armedThrough, slotsUsed, backArrowVisible } = A;
 
 const HTML = fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 const IDS = new Set([...HTML.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
@@ -177,6 +177,46 @@ check('cancelling a morning selects exactly its own bursts',
   recs.filter(e => e.morning === firstKey).length === RING_BURST);
 check('cancelling a morning leaves every other morning intact',
   recs.filter(e => e.morning !== firstKey).length === RING_BURST * (DAYS_AHEAD - 1));
+
+console.log('\n== ring screen back arrow: test runs only ==');
+check('a test run offers a way back to alarm setup',
+  backArrowVisible({ real: false }) === true);
+check('a REAL alarm offers no back arrow (the screen is the dismissal gate)',
+  backArrowVisible({ real: true }) === false);
+
+// The arrow lives inside #sRing, so the .screen display toggle hides it on
+// every other screen without any JavaScript having to remember to.
+const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+const ring = html.slice(html.indexOf('id="sRing"'), html.indexOf('id="sCal"'));
+check('the back arrow is inside the ring screen', ring.includes('id="ringBack"'));
+check('it ships hidden by default', /id="ringBack"[^>]*class="[^"]*hide|class="[^"]*hide[^"]*"[^>]*id="ringBack"/.test(ring)
+  || /<button[^>]*class="backArrow hide"[^>]*id="ringBack"/.test(ring));
+check('it has an accessible label', ring.includes('aria-label="Back to alarm setup"'));
+check('the real-alarm escape hatch is still on the ring screen too',
+  ring.includes('id="ringEscape"'));
+
+// Backing out of a rehearsal must not touch the real schedule. Rather than
+// trust the comment, assert it structurally: satisfaction happens in exactly
+// one place, and the back handler is not it.
+const main = fs.readFileSync(path.join(ROOT, 'src/main.js'), 'utf8');
+check('markSatisfied is called from exactly one place',
+  (main.match(/alarm\.markSatisfied\(/g) || []).length === 1);
+const onFinishBlock = main.slice(main.indexOf('onFinish: async'), main.indexOf('wireUI();'));
+check('...and that place is onFinish', onFinishBlock.includes('alarm.markSatisfied('));
+const backBlock = main.slice(main.indexOf("$('ringBack').onclick"),
+  main.indexOf("$('againBtn').onclick"));
+for (const forbidden of ['markSatisfied', 'saveSatisfied', 'alarm.disarm', 'alarm.arm(', 'LocalNotifications']){
+  check(`the back handler never calls ${forbidden}`, !backBlock.includes(forbidden));
+}
+check('the back handler refuses to run for a real ring',
+  /activeRing && activeRing\.real/.test(backBlock));
+// The arrow is fixed to the viewport corner, so the ring screen needs matching
+// clearance or it lands on the heading. The two must always toggle together.
+check('the clearance class toggles with the arrow',
+  /classList\.toggle\('hasBack', showBack\)/.test(main) &&
+  /classList\.toggle\('hide', !showBack\)/.test(main));
+check('the clearance rule exists in the generated CSS',
+  fs.readFileSync(path.join(ROOT, 'src/styles.css'), 'utf8').includes('#sRing.hasBack'));
 
 console.log('\n== top-up guard (must not cancel notifications about to fire) ==');
 check('inRingWindow is true at the first burst',

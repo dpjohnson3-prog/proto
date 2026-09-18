@@ -103,7 +103,14 @@ all three count.
 
 What does **not** count: tapping the notification, swiping it away (iOS doesn't
 report those anyway), opening the app and abandoning it, or a "Try it now" test
-run. The satisfied morning is recorded durably (`dawn.satisfied`), so a
+run.
+
+The ring screen shows a **back arrow only for a test run**. When a real alarm
+is ringing that screen is the dismissal gate, so a one-tap exit would reduce
+the rep requirement to a tap; the arrow is not rendered at all. Backing out of
+a test does not go through `onFinish`, so it cannot satisfy a morning or cancel
+a scheduled notification. *I can't do this right now* remains the deliberate
+exit from both. The satisfied morning is recorded durably (`dawn.satisfied`), so a
 notification tapped out of Notification Center hours later cannot re-ring a
 morning whose reps are done, and rebuilding the schedule cannot resurrect it.
 
@@ -241,6 +248,9 @@ Set the alarm 2 minutes out, lock the phone, wait for it to ring.
 
 | Test | Expected |
 |---|---|
+| Real alarm rings, look at the ring screen | **No back arrow** in the top-left |
+| *Try it now*, look at the ring screen | Back arrow present, clear of the notch |
+| Back out of a test run, then check the alarm screen | Still armed, same ring-through date |
 | Tap the notification, then background the app without doing reps | It keeps ringing — bursts continue |
 | Swipe the notification away | It keeps ringing |
 | Open the app, sit on the ring screen, do nothing | It keeps ringing |

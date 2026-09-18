@@ -158,6 +158,9 @@ async function enterRing({ real = false, morning = null } = {}){
     return;
   }
   activeRing = { real, morning: key };
+  const showBack = alarm.backArrowVisible({ real });
+  $('ringBack').classList.toggle('hide', !showBack);
+  $('sRing').classList.toggle('hasBack', showBack);
   $('soundWarn').classList.add('hide');
   $('ringCount').textContent = settings.goal;
   counter.setGoal(settings.goal);
@@ -253,6 +256,15 @@ $('testBtn').onclick = () => { primeAudio(); enterRing({ real: false }); };
 // Never trap someone on the ringing screen either: the same escape sheet the
 // counting screen uses is reachable before a single rep is attempted.
 $('ringEscape').onclick = () => { $('sheet').classList.add('on'); };
+
+// Back out of a TEST run only (the arrow is not rendered for a real alarm).
+// This deliberately does NOT go through onFinish: abandoning a rehearsal must
+// not satisfy the morning or cancel a single real scheduled notification.
+$('ringBack').onclick = () => {
+  if (activeRing && activeRing.real) return;   // belt and braces
+  activeRing = null;
+  showAlarmScreen();
+};
 
 $('againBtn').onclick = () => { showAlarmScreen(); };
 

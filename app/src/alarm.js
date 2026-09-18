@@ -183,6 +183,12 @@ export function buildNotifications(hhmm, goal, from = new Date(), satisfiedKey =
   };
 }
 
+// Whether the ring screen may offer a one-tap way back to alarm setup.
+// Only a test run may. When a real alarm is ringing, this screen IS the
+// dismissal gate: a back arrow would reduce the rep requirement to a tap. The
+// escape-hatch sheet remains the deliberate exit from both.
+export function backArrowVisible({ real }){ return !real; }
+
 // Whether a ring event should actually take over the screen. Extracted so the
 // safety-critical decision is testable without a device.
 export function shouldRing({ setInProgress, real, morning, satisfiedKey }){

@@ -51,6 +51,7 @@ const PROBES = [
   ['#preview', ['top','right']],
   ['.sheet',   ['paddingBottom','paddingLeft','paddingRight']],
   ['#dbg',     ['bottom','left']],
+  ['#ringBack', ['top','left']],
   ['#dawn',    ['top','right','bottom','left']],
 ];
 
@@ -75,6 +76,27 @@ async function measure(dir){
 }
 const base  = await measure(variant('base'));
 const inset = await measure(variant('inset'));
+
+// The back arrow is fixed to the corner while the heading is in normal flow,
+// so they can collide. Check the real rendered boxes, at both inset values.
+async function overlap(dir){
+  const { srv, port } = await serve(variant(dir));
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load' });
+  const r = await page.evaluate(() => {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
+    const ring = document.getElementById('sRing');
+    ring.classList.add('on', 'hasBack');
+    document.getElementById('ringBack').classList.remove('hide');
+    const a = document.getElementById('ringBack').getBoundingClientRect();
+    const h = ring.querySelector('h1').getBoundingClientRect();
+    return { arrowBottom: a.bottom, headingTop: h.top, arrowLeft: a.left, arrowTop: a.top };
+  });
+  await page.close(); srv.close();
+  return r;
+}
+const oBase = await overlap('base');
+const oInset = await overlap('inset');
 await browser.close();
 
 const px = v => parseFloat(v);
@@ -102,6 +124,7 @@ const EXPECT = [
   ['#preview', ['top','right']],
   ['.sheet', ['bottom','left','right']],
   ['#dbg', ['bottom','left']],
+  ['.backArrow', ['top','left']],
 ];
 for (const [sel, sides] of EXPECT){
   const r = rule(sel);
@@ -111,6 +134,14 @@ for (const [sel, sides] of EXPECT){
 }
 check('#dawn has no inset (stays full-bleed)', !rule('#dawn').includes('env('));
 check('#dawnWarm has no inset (stays full-bleed)', !rule('#dawnWarm').includes('env('));
+
+console.log('\n== back arrow does not collide with the ring heading ==');
+for (const [label, o] of [['no inset', oBase], ['44px inset', oInset]]){
+  check(`heading clears the back arrow (${label})`, o.headingTop >= o.arrowBottom,
+    `arrow bottom ${o.arrowBottom} <= heading top ${o.headingTop}`);
+  check(`arrow stays in the top-left corner (${label})`,
+    o.arrowLeft < 195 && o.arrowTop < 200, `at ${o.arrowLeft},${o.arrowTop}`);
+}
 
 console.log(`\n  base padding on .wrap: ${base['.wrap'].paddingTop} (prototype value, unchanged at zero insets)`);
 console.log(`  ${pass} passed, ${fail} failed`);
