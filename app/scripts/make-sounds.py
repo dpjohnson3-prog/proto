@@ -28,6 +28,7 @@ import array, math, os, struct, wave
 SR       = 22050        # plenty for tones; halves the file size vs 44.1k
 DURATION = 20.0         # comfortably inside Apple's 30s ceiling
 PEAK     = 0.72         # leaves headroom so nothing clips on a phone speaker
+KEEPALIVE_SECONDS = 10.0  # long loop = fewer restarts while it runs all night
 HERE     = os.path.dirname(os.path.abspath(__file__))
 APP      = os.path.dirname(HERE)
 
@@ -109,6 +110,18 @@ def reveille():
                      attack=0.008, release=0.22, gain=1.0, decay=1.8)
     return buf
 
+def keepalive():
+    """
+    Near-silence, looped to hold the background audio session open.
+
+    NOT digital zero on purpose: an audio session fed pure silence is a good
+    way to get the app suspended, and some iOS versions treat it as "not
+    playing". One LSB of amplitude is about -90 dBFS - inaudible on any
+    speaker, but unambiguously a signal.
+    """
+    n = int(KEEPALIVE_SECONDS * SR)
+    return [(3.0 / 32767.0) * math.sin(2 * math.pi * 40.0 * (i / SR)) for i in range(n)]
+
 VOICES = [
     ('dawn',     dawn),
     ('chime',    chime),
@@ -117,9 +130,16 @@ VOICES = [
     ('reveille', reveille),
 ]
 
-def write_wav(path, samples):
+# Not an alarm tone: the silent loop the background audio session plays between
+# arm time and fire time. Written alongside the others so one script owns every
+# audio file in the app.
+KEEPALIVE = ('keepalive', keepalive)
+
+def write_wav(path, samples, normalise=True):
     peak = max(abs(s) for s in samples) or 1.0
-    scale = (PEAK / peak) * 32767
+    # The keepalive loop is deliberately left at its own tiny amplitude;
+    # normalising it to PEAK would turn inaudible into a 6am siren.
+    scale = ((PEAK / peak) if normalise else 1.0) * 32767
     # Fade the very start and end so a looping in-app playback has no click.
     fade = int(0.02 * SR)
     pcm = array.array('h')
@@ -128,7 +148,7 @@ def write_wav(path, samples):
         g = 1.0
         if i < fade:          g = i / fade
         elif i > n - fade:    g = max(0.0, (n - i) / fade)
-        v = int(max(-32767, min(32767, s * scale * g)))
+        v = int(round(max(-32767, min(32767, s * scale * g))))
         pcm.append(v)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with wave.open(path, 'wb') as w:
@@ -140,11 +160,12 @@ def main():
     web = os.path.join(APP, 'public', 'sounds')
     ios = os.path.join(APP, 'ios', 'App', 'App')
     print('%-10s %8s %8s  %s' % ('name', 'seconds', 'KiB', 'written to'))
-    for name, fn in VOICES:
+    for name, fn in VOICES + [KEEPALIVE]:
         samples = fn()
-        size = write_wav(os.path.join(web, name + '.wav'), samples)
+        norm = (name != 'keepalive')
+        size = write_wav(os.path.join(web, name + '.wav'), samples, norm)
         if os.path.isdir(os.path.dirname(ios)):
-            write_wav(os.path.join(ios, name + '.wav'), samples)
+            write_wav(os.path.join(ios, name + '.wav'), samples, norm)
             where = 'public/sounds + ios bundle root'
         else:
             where = 'public/sounds (no ios/ dir)'

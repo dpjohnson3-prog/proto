@@ -24,6 +24,14 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<!-- The alarm keeps an AVAudioSession alive from arm time to fire time
+		     so it can ring continuously and on the media channel, which is the
+		     only way to ring past the silent switch. Without this the process
+		     is suspended and the alarm cannot sound at all. -->
+		<string>audio</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Dawn Alarm uses the front camera to count your push-ups so it can turn the alarm off. The video is analysed on your phone as it arrives, is never recorded, saved, or sent anywhere, and the camera is released the moment your set ends.</string>
 	<key>UIApplicationSceneManifest</key>

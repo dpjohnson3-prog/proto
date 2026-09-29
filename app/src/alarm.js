@@ -238,10 +238,21 @@ export function buildNotifications(hhmm, goal, from = new Date(), satisfiedKey =
 // So this is a plain, permanent advisory instead, shown for as long as the
 // alarm is armed. It never blocks arming - arming a silent alarm is allowed,
 // being surprised by it is not.
+// Now that the alarm rings through a background audio session on the media
+// channel, the silent switch no longer silences it - .playback plays regardless
+// of the switch. The NOTIFICATION fallback still obeys it, so the advisory
+// stays, narrowed to what is actually true.
 export const RINGER_ADVISORY =
-  'Leave the ringer on. This rings through Focus and Do Not Disturb, but the ' +
-  'silent switch and the volume still win - iOS gives apps no way to ring ' +
-  'past those, and no way to check them while the app is closed.';
+  'Turn the volume up. The alarm plays through the media channel, so it rings ' +
+  'even with the silent switch on - but it rings at the media volume, and the ' +
+  'backup notifications still obey the silent switch.';
+
+// Nothing can survive a force-quit: iOS tears the process down and the audio
+// with it. Saying so is better than a user discovering it by oversleeping.
+export const FORCE_QUIT_ADVISORY =
+  'Do not swipe the app away in the app switcher. That kills the continuous ' +
+  'alarm - only the backup notifications would be left, and those stop on ' +
+  'their own after a few minutes.';
 
 // Whether the ring screen may offer a one-tap way back to alarm setup.
 // Only a test run may. When a real alarm is ringing, this screen IS the

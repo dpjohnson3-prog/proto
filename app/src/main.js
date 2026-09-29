@@ -5,6 +5,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { initCounter } from './counter.js';
 import { loadSettings, saveSettings } from './storage.js';
 import * as alarm from './alarm.js';
+import * as alarmAudio from './alarmAudio.js';
 
 const $ = (id) => document.getElementById(id);
 const isNative = Capacitor.isNativePlatform();
@@ -43,6 +44,13 @@ function primeAudio(){
 
 function startRinging(){
   stopPreview();
+  if (alarmAudio.isNativeAudio){
+    // Native path: survives backgrounding and ignores the silent switch. Only
+    // stopRinging() ends it - not a tap, not a swipe, not the app closing.
+    alarmAudio.fireAlarm(alarm.soundFile(settings.sound),
+                         (activeRing && activeRing.morning) || alarm.dayKey(new Date()));
+    return;
+  }
   if (!audio || audioFor !== settings.sound){
     audio = new Audio(alarmSrc());
     audioFor = settings.sound;
@@ -58,8 +66,12 @@ function startRinging(){
   });
 }
 
+// The single choke point for silencing the alarm. Reached from onFinish (a
+// completed set, the 30s timer, or a bail) and from the test-run back arrow -
+// and from nowhere else.
 function stopRinging(){
   try { if (audio){ audio.pause(); audio.currentTime = 0; } } catch (e){}
+  if (alarmAudio.isNativeAudio) alarmAudio.stopAlarm();
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +200,7 @@ function renderArmState(){
     el.classList.remove('armed');
     $('armThrough').textContent = '';
     $('ringerNote').textContent = '';
+    $('quitNote').textContent = '';
     return;
   }
   const [h, m] = settings.time.split(':').map(Number);
@@ -200,6 +213,7 @@ function renderArmState(){
   // Permanent while armed. Deliberately not a dismissible toast: it has to
   // still be here later, when someone is working out why nothing rang.
   $('ringerNote').textContent = alarm.RINGER_ADVISORY;
+  $('quitNote').textContent = alarmAudio.isNativeAudio ? alarm.FORCE_QUIT_ADVISORY : '';
 }
 
 async function enterRing({ real = false, morning = null } = {}){
@@ -265,6 +279,7 @@ $('armBtn').onclick = async () => {
     settings.armed = false;
     await saveSettings(settings);
     if (isNative) await alarm.disarm();
+    await alarmAudio.stopKeepalive();   // release the audio session
     showAlarmScreen();
     return;
   }
@@ -299,6 +314,10 @@ $('armBtn').onclick = async () => {
 
   const built = await alarm.arm(settings.time, settings.goal, settings.sound);
   const first = built && built.first;
+  // Hold the audio session open from now until the alarm fires. This is what
+  // lets it ring continuously, and past the silent switch. It also costs
+  // battery overnight - see README.
+  await alarmAudio.startKeepalive();
   settings.armed = true;
   await saveSettings(settings);
   renderArmState();
@@ -404,6 +423,20 @@ async function boot(){
   }
 
   showAlarmScreen();
+
+  // The process can come back while an alarm should still be ringing - a
+  // force-quit, a crash, a reboot. The plugin records that it was ringing but
+  // deliberately does NOT resume on its own: enterRing() is the gate, so the
+  // satisfied-morning record still decides, and a morning already completed
+  // stays silent.
+  if (alarmAudio.isNativeAudio){
+    const st = await alarmAudio.getState();
+    if (st && st.wasRingingAtLaunch){
+      await enterRing({ real: true, morning: st.morning || alarm.dayKey(new Date()) });
+    } else if (settings.armed && !st.keepalive){
+      await alarmAudio.startKeepalive();   // armed but the session died with the process
+    }
+  }
 }
 
 boot();

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Adds the generated alarm sounds to the iOS App target's Resources phase.
+ * Reconciles the Xcode project with the files this repo generates or adds: the
+ * alarm sounds (Resources phase) and the native plugin source (Sources phase).
  *
  * Why this exists: a notification sound has to sit at the app BUNDLE ROOT, not
  * in the web assets Capacitor copies. Dropping the .wav files into
@@ -68,7 +69,24 @@ for (const wav of sounds){
   added++;
 }
 
-if (added){
+// Native plugin sources. A .swift file sitting in ios/App/App/ is not compiled
+// unless it is in the target's Sources phase - it would simply be ignored, and
+// the plugin would be missing at runtime with no build error explaining why.
+const swift = fs.readdirSync(APP_DIR).filter(f => f.endsWith('.swift')).sort();
+let addedSwift = 0, skippedSwift = 0;
+for (const src of swift){
+  if (existing().has(src)){ skippedSwift++; continue; }
+  const file = new pbxFile(src, { lastKnownFileType: 'sourcecode.swift' });
+  file.uuid = proj.generateUuid();
+  file.fileRef = proj.generateUuid();
+  proj.addToPbxFileReferenceSection(file);
+  proj.addToPbxBuildFileSection(file);
+  proj.addToPbxSourcesBuildPhase(file);
+  proj.addToPbxGroup(file, appGroup);
+  addedSwift++;
+}
+
+if (added || addedSwift){
   let out = proj.writeSync();
   // The writer drops these two cosmetic attributes. They are only Xcode
   // bookkeeping, but putting them back keeps this script's diff purely
@@ -100,8 +118,21 @@ for (const wav of sounds){
   const ok = [...inPhase].some(c => c.startsWith(wav + ' '));
   if (!ok){ console.error('  MISSING from Resources phase: ' + wav); bad++; }
 }
+// Prove the Swift sources really compile into the target too.
+const srcPhases = check.hash.project.objects['PBXSourcesBuildPhase'] || {};
+const inSources = new Set();
+for (const v of Object.values(srcPhases)){
+  if (v && v.files) for (const f of v.files) inSources.add(String(f.comment || ''));
+}
+for (const src of swift){
+  if (![...inSources].some(c => c.startsWith(src + ' '))){
+    console.error('  MISSING from Sources phase: ' + src); bad++;
+  }
+}
 console.log(`sounds: ${added} added, ${skipped} already present`);
-console.log(`Resources build phase now has ${inPhase.size} entries`);
+console.log(`swift:  ${addedSwift} added, ${skippedSwift} already present`);
+console.log(`Resources phase ${inPhase.size} entries, Sources phase ${inSources.size} entries`);
 for (const wav of sounds) console.log('  ' + (bad ? '?' : 'ok') + '  ' + wav);
+for (const src of swift) console.log('  ' + (bad ? '?' : 'ok') + '  ' + src + '  (compiled)');
 if (bad){ console.error('FAILED: ' + bad + ' sound(s) not in the target.'); process.exit(1); }
 console.log('All sounds are members of the App target.');

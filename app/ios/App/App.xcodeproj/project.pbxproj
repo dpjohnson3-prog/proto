@@ -21,6 +21,8 @@
 		18B182DC09BF46EDA75A96B1 /* dawn.wav in Resources */ = {isa = PBXBuildFile; fileRef = 7E7988B3E2354C36BF7D9BD8 /* dawn.wav */; };
 		13A89A416E3A4605B2737766 /* pulse.wav in Resources */ = {isa = PBXBuildFile; fileRef = 034E4AA61D154ACBB78D3CDB /* pulse.wav */; };
 		8981F963EDFB4C08AC9E2D7D /* reveille.wav in Resources */ = {isa = PBXBuildFile; fileRef = D73ECA13E83B4C1CB3AF26D3 /* reveille.wav */; };
+		A7A1BEF8A2AD42A0B2AEAF1A /* keepalive.wav in Resources */ = {isa = PBXBuildFile; fileRef = 85AED6E0067E43958D42AFED /* keepalive.wav */; };
+		CAD65FA67511405B9D4E75EF /* DawnAlarmAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E02314896C64069B5420849 /* DawnAlarmAudio.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +42,8 @@
 		7E7988B3E2354C36BF7D9BD8 /* dawn.wav */ = {isa = PBXFileReference; name = "dawn.wav"; path = "dawn.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = audio.wav; explicitFileType = undefined; includeInIndex = 0; };
 		034E4AA61D154ACBB78D3CDB /* pulse.wav */ = {isa = PBXFileReference; name = "pulse.wav"; path = "pulse.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = audio.wav; explicitFileType = undefined; includeInIndex = 0; };
 		D73ECA13E83B4C1CB3AF26D3 /* reveille.wav */ = {isa = PBXFileReference; name = "reveille.wav"; path = "reveille.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = audio.wav; explicitFileType = undefined; includeInIndex = 0; };
+		85AED6E0067E43958D42AFED /* keepalive.wav */ = {isa = PBXFileReference; name = "keepalive.wav"; path = "keepalive.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = audio.wav; explicitFileType = undefined; includeInIndex = 0; };
+		9E02314896C64069B5420849 /* DawnAlarmAudio.swift */ = {isa = PBXFileReference; name = "DawnAlarmAudio.swift"; path = "DawnAlarmAudio.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +92,8 @@
 				7E7988B3E2354C36BF7D9BD8 /* dawn.wav */,
 				034E4AA61D154ACBB78D3CDB /* pulse.wav */,
 				D73ECA13E83B4C1CB3AF26D3 /* reveille.wav */,
+				85AED6E0067E43958D42AFED /* keepalive.wav */,
+				9E02314896C64069B5420849 /* DawnAlarmAudio.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -168,6 +174,7 @@
 				18B182DC09BF46EDA75A96B1 /* dawn.wav in Resources */,
 				13A89A416E3A4605B2737766 /* pulse.wav in Resources */,
 				8981F963EDFB4C08AC9E2D7D /* reveille.wav in Resources */,
+				A7A1BEF8A2AD42A0B2AEAF1A /* keepalive.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -180,6 +187,7 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				CAD65FA67511405B9D4E75EF /* DawnAlarmAudio.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

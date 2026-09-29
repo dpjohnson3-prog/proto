@@ -8,7 +8,8 @@ const { RING_BURST, BURST_GAP_MIN, DAYS_AHEAD, IOS_PENDING_CAP, RESERVED_SLOTS,
         WARN_LEAD_DAYS, WARN_HOUR, RING_GRACE_MIN,
         plan, buildNotifications, shouldRing, inRingWindow, dayKey,
         armedThrough, slotsUsed, backArrowVisible, RINGER_ADVISORY,
-        SOUNDS, DEFAULT_SOUND, soundFile, soundUrl, soundOf, isSound } = A;
+        SOUNDS, DEFAULT_SOUND, soundFile, soundUrl, soundOf, isSound,
+        FORCE_QUIT_ADVISORY } = A;
 
 const HTML = fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 const IDS = new Set([...HTML.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
@@ -310,6 +311,78 @@ check('the choice is persisted with the other settings',
 check('choosing a sound re-schedules', /settings\.sound = s\.id[\s\S]{0,400}persistAndMaybeReschedule/.test(main));
 check('the ring screen plays the chosen sound too', /alarm\.soundUrl\(settings\.sound\)/.test(main));
 check('preview stops before a real ring starts', /function startRinging[\s\S]{0,120}stopPreview\(\)/.test(main));
+
+console.log('\n== continuous audio alarm ==');
+const swift = fs.readFileSync(path.join(ROOT, 'ios/App/App/DawnAlarmAudio.swift'), 'utf8');
+const plist = fs.readFileSync(path.join(ROOT, 'ios/App/App/Info.plist'), 'utf8');
+const bridge = fs.readFileSync(path.join(ROOT, 'src/alarmAudio.js'), 'utf8');
+
+// Parse the array rather than pattern-matching across it: there is an
+// explanatory comment in between, and distance regexes are how you get a test
+// that fails on a comment edit.
+const bgArray = (plist.match(/<key>UIBackgroundModes<\/key>\s*<array>([\s\S]*?)<\/array>/) || [])[1] || '';
+check('UIBackgroundModes declares audio', /<string>audio<\/string>/.test(bgArray),
+  `modes: ${(bgArray.match(/<string>([^<]+)<\/string>/g) || []).join(',') || 'none'}`);
+check('the session uses .playback (ignores the silent switch)',
+  /setCategory\(\.playback/.test(swift));
+check('keepalive mixes with other audio (does not stop a podcast)',
+  /mixWithOthers/.test(swift));
+check('the alarm does NOT mix - it takes the session over',
+  /activateForAlarm[\s\S]{0,300}options: \[\]\)/.test(swift));
+check('the alarm loops forever (numberOfLoops = -1)', /numberOfLoops = loops/.test(swift) && /loops: -1/.test(swift));
+check('the keepalive loop is silent (volume 0)', /keepalive\.wav", volume: 0\.0/.test(swift));
+check('a near-silent keepalive file is generated',
+  fs.existsSync(path.join(ROOT, 'ios/App/App/keepalive.wav')));
+
+console.log('\n-- the three ways audio dies on its own --');
+check('interruptions are observed (call, Siri)', /interruptionNotification/.test(swift));
+check('...and the alarm resumes afterwards',
+  /case \.ended:[\s\S]{0,400}alarmPlayer\?\.play\(\)/.test(swift));
+check('route changes are observed (headphones out)', /routeChangeNotification/.test(swift));
+check('...and it keeps ringing rather than pausing',
+  /oldDeviceUnavailable[\s\S]{0,300}play\(\)/.test(swift));
+check('media-services reset is handled', /mediaServicesWereResetNotification/.test(swift));
+check('ringing state is persisted for relaunch', /UserDefaults[\s\S]{0,200}kRinging/.test(swift));
+
+console.log('\n-- the satisfied morning still decides, not the audio --');
+check('the plugin does not resume on its own',
+  /restoreAfterLaunch[\s\S]{0,300}wasRingingAtLaunch = UserDefaults/.test(swift) &&
+  !/restoreAfterLaunch[\s\S]{0,300}fireAlarm\(/.test(swift));
+check('relaunch resume goes through enterRing (which gates on satisfied)',
+  /wasRingingAtLaunch[\s\S]{0,200}enterRing\(\{ real: true/.test(main));
+check('firing is only reachable from startRinging',
+  (main.match(/alarmAudio\.fireAlarm\(/g) || []).length === 1);
+// Find startRinging()'s single call site and name the function it sits in,
+// rather than guessing at a character distance.
+const callLine = main.split('\n').findIndex(l => /^\s*startRinging\(\);/.test(l));
+const enclosing = main.split('\n').slice(0, callLine + 1)
+  .filter(l => /^(async )?function \w+/.test(l)).pop() || '';
+check('startRinging has exactly one call site',
+  (main.match(/^\s*startRinging\(\);/gm) || []).length === 1);
+check('...and it is inside enterRing (so the satisfied gate always runs first)',
+  /function enterRing\b/.test(enclosing), enclosing.trim().slice(0, 60));
+check('stopping is only reachable from stopRinging',
+  (main.match(/alarmAudio\.stopAlarm\(/g) || []).length === 1);
+check('onFinish stops the audio', /onFinish[\s\S]{0,300}stopRinging\(\)/.test(main));
+check('the test-run back arrow stops the audio too',
+  /ringBack'\)\.onclick[\s\S]{0,300}showAlarmScreen\(\)/.test(main) &&
+  /showAlarmScreen[\s\S]{0,200}stopRinging\(\)/.test(main));
+check('keepalive starts on arm and stops on disarm',
+  /alarmAudio\.startKeepalive\(\)/.test(main) && /alarmAudio\.stopKeepalive\(\)/.test(main));
+
+console.log('\n-- degrading safely --');
+check('every native call is wrapped so a missing plugin cannot break the app',
+  /try \{ return \(await Native\[name\]/.test(bridge) && /catch \(e\)/.test(bridge));
+check('the web build gets a no-op stub', /webStub/.test(bridge));
+check('notifications are kept as a fallback, not replaced',
+  /RING_BURST/.test(fs.readFileSync(path.join(ROOT, 'src/alarm.js'), 'utf8')));
+check('the force-quit limitation is stated in the UI',
+  typeof FORCE_QUIT_ADVISORY === 'string' && /swipe/i.test(FORCE_QUIT_ADVISORY));
+check('...and shown on the armed state', /quitNote'\)\.textContent = alarmAudio\.isNativeAudio/.test(main));
+check('the ringer advisory no longer claims the silent switch wins',
+  !/silent switch and the volume still win/.test(RINGER_ADVISORY));
+check('...but still warns the notification fallback obeys it',
+  /notifications still obey/i.test(RINGER_ADVISORY));
 
 console.log('\n== top-up guard (must not cancel notifications about to fire) ==');
 check('inRingWindow is true at the first burst',

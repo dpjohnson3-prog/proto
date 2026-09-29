@@ -13,24 +13,128 @@ The rep detection is **ported verbatim** from `../rep-counter.html`. See
 You already knew about Critical Alerts. These are the rest, and some of them
 change what this app can be.
 
-### This is not a system alarm, and cannot be made into one
+### How the alarm actually rings
 
-The Clock app's alarms use private API. A third-party app gets
-`UNUserNotificationCenter`, which means:
+The alarm is a **background audio session**, with notifications kept as a
+fallback. An `AVAudioSession` in `.playback` keeps running when the app is
+backgrounded and plays on the *media* channel, so it loops continuously and
+rings with the silent switch on.
 
 | | Clock.app alarm | This app |
 |---|---|---|
-| Ignores the silent switch | yes | **no** |
-| Ignores the volume setting | yes | **no** |
-| Rings until dismissed | yes | **no — 30s max per notification** |
-| Breaks through Focus | yes | partly (see below) |
+| Ignores the silent switch | yes | **yes** (audio); no (notification fallback) |
+| Ignores the volume setting | yes | **no — rings at media volume** |
+| Rings until dismissed | yes | **yes**, unless force-quit |
+| Breaks through Focus | yes | yes (`timeSensitive` + audio) |
 | Opens an app automatically | n/a | **no — requires a tap** |
+| Survives force-quit | yes | **no** (see below) |
+
+#### Why not AlarmKit
+
+Apple shipped AlarmKit in iOS 26 for exactly this use case, and it is the
+obvious candidate. It cannot work here, for one reason.
+
+From [Apple's `AlarmPresentation.Alert`
+docs](https://developer.apple.com/documentation/alarmkit/alarmpresentation/alert-swift.struct):
+
+> "Alert configures the title and buttons in the alarm UI. **The system
+> provides a stop button automatically.** Use this object to optionally define
+> a secondary button and its behavior."
+
+And the initializer:
+
+```swift
+init(title: LocalizedStringResource,
+     stopButton: AlarmButton,                                   // required
+     secondaryButton: AlarmButton? = nil,                       // optional
+     secondaryButtonBehavior: SecondaryButtonBehavior? = nil)
+```
+
+`stopButton` is non-optional with no default; only the *secondary* button is
+optional. So every AlarmKit alarm ships a Stop button that ends the alarm
+without the app being launched or consulted — `AlarmManager.stop(id:)` deletes
+or reschedules it outright. The secondary button with `.custom` behaviour can
+open the app, but it cannot be the *only* button, and it cannot make Stop
+conditional.
+
+The entire product is that you cannot dismiss the alarm without doing the reps.
+A guaranteed one-tap Stop defeats it completely, so AlarmKit is unusable as the
+enforcement mechanism no matter how good the rest of it is.
+
+Two further costs, had it worked: it is **iOS 26+** (this project targets 15.0,
+so adopting it would drop every device below iOS 26), and it needs
+`NSAlarmKitUsageDescription`. A Capacitor plugin would *not* need writing from
+scratch — [`@capawesome/capacitor-alarm`](https://www.npmjs.com/package/@capawesome/capacitor-alarm)
+already wraps AlarmKit — but that does not change the verdict.
+
+It is still worth revisiting if Apple ever allows a custom dismissal condition.
+
+#### What kills the audio alarm
+
+**Force-quitting from the app switcher.** iOS tears the process down and the
+audio with it, and nothing can prevent that — no background mode, no
+entitlement. The notification bursts remain scheduled as a fallback so a
+force-quit still produces beeps, and the alarm screen says plainly that swiping
+the app away disables the reliable alarm.
+
+Handled, because each is otherwise a way to oversleep:
+
+| Event | Behaviour |
+|---|---|
+| Incoming call / Siri | Interruption observed; the alarm resumes when it ends, whether or not the system flags `shouldResume` |
+| Headphones unplugged | Route change observed; keeps ringing on the speaker instead of pausing, which is the default |
+| Media services reset | Players rebuilt and the alarm restarted |
+| Relaunch mid-alarm | The plugin records that it *was* ringing but never resumes on its own — JS re-enters through the same gate, so a completed morning stays silent |
+| Podcast playing at arm time | Keepalive uses `.mixWithOthers`, so arming does not stop it. Only the alarm itself takes the session over |
+
+#### Battery
+
+Holding an audio session open from arm time to fire time is not free. The
+process stays resident and the audio unit keeps running, even though the
+keepalive loop is silent.
+
+Estimate: **~0.5–1.5% per hour**, so **roughly 4–12% across an eight-hour
+night**. That is reasoned from the cost of local audio playback with the screen
+off (Apple rates recent iPhones at ~80 hours of audio playback, ≈1.25%/hour);
+this is cheaper — no Bluetooth, no network, tiny file, volume 0 — but the
+session is the thing that costs, not the content. **It has not been measured on
+a device**; measure it before trusting the range.
+
+Ways to reduce it, none of them silently chosen:
+
+1. **Arm later.** The cost is arm-time to fire-time, so arming at 23:00 for
+   06:30 costs 7.5 hours of it, not 24.
+2. **Make it a toggle** — "reliable alarm" (audio, costs battery) vs
+   "notifications only" (free, stops after ~7 minutes). This is the real lever
+   and it is a product decision, so it is proposed rather than built.
+3. Lowering the keepalive sample rate is *not* worth it — `AVAudioPlayer`
+   resamples to the hardware rate anyway, so the saving is negligible.
+
+#### App Store risk
+
+Worth knowing before building further on this. **Guideline 2.5.4** says
+multitasking apps may use background modes only for their intended purpose;
+using the audio mode to keep an app alive rather than to play audible content
+is a known rejection reason, and playing near-silence for eight hours is
+squarely in that gray area.
+
+What is in this app's favour: it genuinely is an alarm clock, the audio session
+exists to play an alarm, and it does play real audio at fire time. Alarmy and
+several other anti-snooze alarms ship exactly this pattern and are on the
+store, which is evidence it passes — not a guarantee, since precedent is not
+policy.
+
+Realistic assessment: **moderate risk**. The common outcome is a reviewer
+asking you to justify the background mode rather than an outright rejection.
+There is no entitlement to apply for; it is a review judgement. Explain the
+alarm use case in the App Review notes, and have the toggle above ready as a
+fallback position if a reviewer pushes back.
 
 **The Critical Alerts entitlement** (Apple grants it by application, mainly to
 medical and safety apps) is the only thing that overrides the silent switch and
 volume. An alarm app is unlikely to be approved.
 
-### The ringer is the one thing nothing gets past
+### The ringer (superseded by the audio alarm, but still true of notifications)
 
 `timeSensitive` beats Focus and Do Not Disturb. It does **not** beat the
 physical silent switch or the volume slider, and neither does anything else
@@ -50,9 +154,11 @@ And a detector that is wrong in either direction is worse than none — "your
 ringer is on" when it is off is precisely the silent failure it would exist to
 prevent.
 
-So the app carries a **permanent advisory on the armed state** instead: not a
-toast, because it has to still be there later when you are working out why
-nothing rang. It never blocks arming.
+**The background audio alarm has since solved most of this**: `.playback` plays
+regardless of the silent switch, so the audio alarm rings with the phone on
+silent. The advisory is narrowed rather than removed, because two things remain
+true — it rings at the *media volume*, and the notification fallback still
+obeys the silent switch. It never blocks arming.
 
 **What I did use:** `interruptionLevel: 'timeSensitive'`. It breaks through most
 Focus modes, and unlike Critical Alerts it's a self-serve Xcode capability with
@@ -278,6 +384,26 @@ ios-assets/      where the alarm sound goes (TODO)
 ---
 
 ## Device test plan (none of this can be verified off-device)
+
+### 0. The continuous alarm — do these first
+
+Everything below this section predates the audio alarm. These are the new ones,
+and the highest priority, because none of it has ever run.
+
+| Test | Expected |
+|---|---|
+| Arm, lock the phone, wait for the alarm | Rings **continuously**, not for 30s |
+| Same, with the **silent switch on** | Still rings (this is the big one) |
+| Let it ring 5+ minutes untouched | Still going |
+| Do the reps | Stops immediately, and stays stopped |
+| Ring, then call the phone from another one | Alarm resumes after the call ends |
+| Ring with headphones in, then yank them out | Keeps ringing on the speaker |
+| Ring, then force-quit from the app switcher | Audio dies (expected); notification beeps continue |
+| Force-quit, then tap a notification | App opens and the alarm **resumes** |
+| Do the reps, then force-quit and reopen | Does **not** start ringing again |
+| Start a podcast, then arm | Podcast keeps playing |
+| Arm overnight, check Settings → Battery | Compare against the 4–12% estimate |
+
 
 Notification scheduling, delivery, sound and the satisfaction rules were
 developed on Linux. The **logic** is covered by 48 assertions in
