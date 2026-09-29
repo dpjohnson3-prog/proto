@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dawn alarm sounds</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:clamp(20px,5vw,40px);background:#0B1026;color:#E8ECF7;
+    font:16px/1.5 'Archivo',system-ui,-apple-system,Helvetica,Arial,sans-serif;
+    max-width:720px;margin-inline:auto}
+  h1{font-size:clamp(24px,6vw,34px);letter-spacing:-.03em;margin:0 0 6px}
+  .lede{color:#8794B5;margin:0 0 28px;max-width:52ch}
+  .s{border:1.5px solid #2B3763;border-radius:16px;padding:16px;margin-bottom:14px;
+    background:rgba(27,37,69,.45)}
+  .hd{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  h2{font-size:20px;margin:0;letter-spacing:-.01em}
+  h2 em{font-style:normal;font-size:12px;color:#160B05;background:#FFC15E;
+    border-radius:6px;padding:2px 7px;margin-left:6px;vertical-align:2px}
+  .n{color:#8794B5;font-size:14px}
+  audio{width:100%;margin:4px 0 12px}
+  dl{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+  dl div{background:#0B1026;border:1px solid #2B3763;border-radius:9px;padding:6px 10px}
+  dt{display:inline;color:#8794B5;font-size:12px}
+  dd{display:inline;margin:0 0 0 6px;font-weight:700;font-size:13px;
+    font-variant-numeric:tabular-nums;color:#4ECDC4}
+  .warn{border:1.5px solid #FFC15E;color:#FFC15E;border-radius:12px;padding:13px 15px;
+    margin-bottom:24px;font-size:14px;line-height:1.5}
+  footer{color:#8794B5;font-size:13px;margin-top:26px;line-height:1.6}
+  code{background:#1B2545;padding:2px 6px;border-radius:5px;font-size:12px}
+</style></head><body>
+<h1>Alarm sounds</h1>
+<p class="lede">All five, loudest-3s first. Each is 20&nbsp;s, 16-bit mono PCM at
+22.05&nbsp;kHz, peaking at &minus;0.3&nbsp;dBFS.</p>
+<div class="warn"><strong>Laptop speakers will mislead you.</strong> These were
+tuned for a phone speaker, which barely reproduces anything below 500&nbsp;Hz.
+The only judgement that counts is listening on the iPhone, at the volume you
+would actually sleep at, from across the room.</div>
+  <section class="s">
+    <div class="hd"><h2>dawn</h2>
+      <span class="n">A slow swell. Barely there.</span></div>
+    <audio controls preload="none" src="sounds/dawn.wav"></audio>
+    <dl>
+      <div><dt>loudest 3s</dt><dd>-8.3 LUFS</dd></div>
+      <div><dt>integrated</dt><dd>-10.4 LUFS</dd></div>
+      <div><dt>peak</dt><dd>-0.3 dBFS</dd></div>
+      <div><dt>2&ndash;4 kHz</dt><dd>38%</dd></div>
+      <div><dt>vs speaker</dt><dd>-2.5 dB</dd></div>
+    </dl>
+  </section>
+  <section class="s">
+    <div class="hd"><h2>chime <em>default</em></h2>
+      <span class="n">Three soft bell tones.</span></div>
+    <audio controls preload="none" src="sounds/chime.wav"></audio>
+    <dl>
+      <div><dt>loudest 3s</dt><dd>-8.0 LUFS</dd></div>
+      <div><dt>integrated</dt><dd>-9.9 LUFS</dd></div>
+      <div><dt>peak</dt><dd>-0.3 dBFS</dd></div>
+      <div><dt>2&ndash;4 kHz</dt><dd>30%</dd></div>
+      <div><dt>vs speaker</dt><dd>-2.3 dB</dd></div>
+    </dl>
+  </section>
+  <section class="s">
+    <div class="hd"><h2>pulse</h2>
+      <span class="n">An even, unhurried pulse.</span></div>
+    <audio controls preload="none" src="sounds/pulse.wav"></audio>
+    <dl>
+      <div><dt>loudest 3s</dt><dd>-9.8 LUFS</dd></div>
+      <div><dt>integrated</dt><dd>-10.5 LUFS</dd></div>
+      <div><dt>peak</dt><dd>-0.3 dBFS</dd></div>
+      <div><dt>2&ndash;4 kHz</dt><dd>36%</dd></div>
+      <div><dt>vs speaker</dt><dd>-1.5 dB</dd></div>
+    </dl>
+  </section>
+  <section class="s">
+    <div class="hd"><h2>cascade</h2>
+      <span class="n">A descending figure. Harder to ignore.</span></div>
+    <audio controls preload="none" src="sounds/cascade.wav"></audio>
+    <dl>
+      <div><dt>loudest 3s</dt><dd>-7.7 LUFS</dd></div>
+      <div><dt>integrated</dt><dd>-8.0 LUFS</dd></div>
+      <div><dt>peak</dt><dd>-0.3 dBFS</dd></div>
+      <div><dt>2&ndash;4 kHz</dt><dd>38%</dd></div>
+      <div><dt>vs speaker</dt><dd>-1.6 dB</dd></div>
+    </dl>
+  </section>
+  <section class="s">
+    <div class="hd"><h2>reveille</h2>
+      <span class="n">Quick and repeating. The insistent one.</span></div>
+    <audio controls preload="none" src="sounds/reveille.wav"></audio>
+    <dl>
+      <div><dt>loudest 3s</dt><dd>-9.3 LUFS</dd></div>
+      <div><dt>integrated</dt><dd>-8.6 LUFS</dd></div>
+      <div><dt>peak</dt><dd>-0.3 dBFS</dd></div>
+      <div><dt>2&ndash;4 kHz</dt><dd>42%</dd></div>
+      <div><dt>vs speaker</dt><dd>-1.1 dB</dd></div>
+    </dl>
+  </section>
+<footer>
+Regenerate with <code>npm run sounds</code>, measure with
+<code>npm run sounds:measure</code>, and gate with
+<code>npm run verify:sounds</code>.<br>
+Each sound starts around 40% level and reaches full by 12&nbsp;s, so one
+20&nbsp;s play escalates rather than opening at maximum.
+</footer>
+</body></html>

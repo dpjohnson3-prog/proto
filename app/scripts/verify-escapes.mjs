@@ -265,7 +265,20 @@ function wavInfo(p){
   const bits = b.readUInt16LE(fmt + 22);
   const data = b.indexOf('data', fmt, 'latin1');
   const bytes = b.readUInt32LE(data + 4);
-  return { audioFormat, channels, rate, bits, seconds: bytes / (rate * channels * bits / 8) };
+  // Peak and RMS straight off the samples. The spectral and LUFS checks that
+  // actually caught the "inaudible on a phone speaker" bug live in
+  // scripts/verify-sounds.py; these are the cheap ones worth having here too.
+  let peak = 0, sumsq = 0, n = 0;
+  for (let i = data + 8; i + 1 < data + 8 + bytes && i + 1 < b.length; i += 2){
+    const v = b.readInt16LE(i) / 32768;
+    const a = Math.abs(v);
+    if (a > peak) peak = a;
+    sumsq += v * v; n++;
+  }
+  const dbfs = (v) => (v > 1e-12 ? 20 * Math.log10(v) : -999);
+  return { audioFormat, channels, rate, bits,
+           seconds: bytes / (rate * channels * bits / 8),
+           peakDb: dbfs(peak), rmsDb: dbfs(Math.sqrt(sumsq / Math.max(1, n))) };
 }
 for (const s of SOUNDS){
   for (const [where, p] of [['web', path.join(ROOT, 'public/sounds', s.id + '.wav')],
@@ -275,9 +288,29 @@ for (const s of SOUNDS){
     check(`${s.id} (${where}) is linear-PCM wav under 30s`,
       !!w && w.audioFormat === 1 && w.bits === 16 && w.seconds < 30,
       w ? `${w.seconds.toFixed(1)}s ${w.bits}-bit fmt=${w.audioFormat}` : 'unreadable');
+    // Loud, but never at full scale. -0.3 dBFS is the target.
+    check(`${s.id} (${where}) peaks near full scale without clipping`,
+      !!w && w.peakDb >= -1.0 && w.peakDb <= -0.1, w ? `${w.peakDb.toFixed(2)} dBFS` : '');
+    check(`${s.id} (${where}) is not quiet`,
+      !!w && w.rmsDb >= -18.0, w ? `RMS ${w.rmsDb.toFixed(1)} dBFS (floor -18)` : '');
   }
 }
 check('the generator is committed', fs.existsSync(path.join(ROOT, 'scripts/make-sounds.py')));
+const gen = fs.readFileSync(path.join(ROOT, 'scripts/make-sounds.py'), 'utf8');
+// The first set was inaudible on a phone because the energy sat below 500 Hz.
+// These assert the fixes for that are still in the generator at all; the
+// acoustic proof is scripts/verify-sounds.py.
+check('the generator weights partials toward the speaker band', /def voice_gain/.test(gen));
+check('...high-passes what the speaker cannot reproduce', /HP_HZ\s*=\s*\d/.test(gen));
+check('...compresses and limits to raise the average', /def compress/.test(gen) && /def soft_limit/.test(gen));
+check('...normalises peaks to about -0.3 dBFS', /TARGET_PEAK_DB\s*=\s*-0\.3/.test(gen));
+check('...and escalates within the file', /def escalate/.test(gen));
+check('the keepalive loop skips mastering (it must stay inaudible)',
+  /if name != 'keepalive':\s*\n\s*samples = master/.test(gen));
+check('the acoustic verifier is committed',
+  fs.existsSync(path.join(ROOT, 'scripts/verify-sounds.py')));
+check('the analyser is committed',
+  fs.existsSync(path.join(ROOT, 'scripts/analyse-sounds.py')));
 check('the iOS target script is committed', fs.existsSync(path.join(ROOT, 'scripts/add-ios-sounds.cjs')));
 
 console.log('\n== changing the sound rebuilds every pending notification ==');

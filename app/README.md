@@ -232,6 +232,87 @@ Five, gentle to insistent: `dawn`, `chime` (default), `pulse`, `cascade`,
 repo owns them outright — no samples, no licensing question if this ships paid.
 `npm run sounds` regenerates them and re-adds them to the iOS target.
 
+**Hear them all:** open `public/preview.html` (or `/preview.html` under
+`npm run dev`) — every sound with a play button and its measured loudness.
+In the app itself, the picker on the alarm screen has a Preview button.
+
+#### They were inaudible once, and why
+
+The first set measured fine on peak level and was useless on a phone. A phone
+speaker is a tiny sealed driver: it reproduces almost nothing below ~500 Hz and
+is most efficient across 2–5 kHz, which is also where hearing is most
+sensitive. The original sounds put **0.0–2.1%** of their energy in 2–4 kHz and
+up to **96%** below 500 Hz, so most of the signal never reached the room.
+
+`dawn` had the *highest* RMS of the five and was the *quietest* in practice,
+losing ~20 dB to the speaker. RMS was measuring energy the speaker threw away.
+
+| | 2–4 kHz | <500 Hz | speaker-weighted | effective |
+|---|---|---|---|---|
+| dawn, before | 0.0% | 96.0% | −19.8 dB | −31.0 |
+| dawn, after | 38% | 18% | −2.5 dB | **−12.9** |
+| reveille, before | 2.1% | 0.0% | −5.4 dB | −19.9 |
+| reveille, after | 42% | 0.3% | −1.1 dB | **−9.7** |
+
+Across the set that is a **10–18 dB gain in effective loudness**. Three changes
+did it, in order of how much they mattered:
+
+1. **Put the energy where the speaker lives.** Every partial is weighted by
+   `voice_gain()`, and the voices carry enough harmonics to have real content
+   at 2–4 kHz.
+2. **Stop paying for bass.** A 300 Hz high-pass stops spending headroom on
+   what the speaker cannot use.
+3. **Stop guarding against a peak that rarely happens.** Notes were normalised
+   by the *sum* of their partial amplitudes — worst-case-peak safe, assuming
+   every partial aligns at once. Normalising by their RMS and letting the
+   limiter catch the rare alignment recovered 3–6 dB on its own.
+
+Then compression, soft limiting, and peak normalisation to −0.3 dBFS. Each
+sound opens at ~40% level and reaches full by 12 s, so one 20 s play escalates.
+
+Now: **−8.0 to −10.5 LUFS integrated, −7.7 to −9.8 LUFS in the loudest 3 s**,
+30–42% of energy in 2–4 kHz, peaks at exactly −0.3 dBFS, nothing clipping.
+
+```sh
+npm run sounds:measure    # full measurement table
+npm run verify:sounds     # 49 assertions, fails if they go quiet again
+```
+
+> **Only listening on the device settles this.** Every number here is a proxy.
+> The speaker curve is an approximation of a small driver, not a measurement of
+> any iPhone, and no metric knows what a bedroom sounds like at 6am. Play them
+> on the phone, at the volume you sleep at, from across the room.
+
+#### Proposed (not built): warn when media volume is low
+
+The background audio alarm plays at the **media** volume, and apps cannot raise
+it — `MPVolumeView` slider manipulation is private API and gets rejected. But
+unlike the ringer volume, the media volume **can be read**:
+
+```swift
+// public API, 0.0 ... 1.0
+let v = AVAudioSession.sharedInstance().outputVolume
+```
+
+That is precisely the slider our alarm rings at, so this is worth doing. Sketch:
+
+1. Add `getOutputVolume()` to `DawnAlarmAudioPlugin` returning `outputVolume`.
+2. Call it at **arm time** and again on `appStateChange` when the app comes
+   forward, reusing the listener that already exists.
+3. Below a threshold (~0.3–0.4), show a loud, persistent warning on the armed
+   state next to the existing ringer advisory — same pattern, same reasons.
+4. Optionally observe it live with KVO and clear the warning as they raise it.
+
+Two caveats that decide the design, and are why this is a proposal rather than
+a commit:
+
+- `outputVolume` reports the volume of the **current route**. With headphones
+  or CarPlay connected it reports *that* device's volume, which says nothing
+  about what the speaker will do at 06:30. A reading must be qualified by the
+  route, or taken only when the route is the built-in speaker.
+- It is a reading at arm time. Volume can be changed afterwards, so it warns
+  rather than guarantees — the same honest limit as the ringer advisory.
+
 A notification sound **cannot be added at runtime** — it has to be in the
 bundle at build time, which is why the set is fixed rather than downloadable.
 It also has to be at the bundle root and a member of the App target, or iOS
@@ -417,6 +498,7 @@ Set the alarm 2 minutes out, lock the phone, wait for it to ring.
 | Test | Expected |
 |---|---|
 | Pick each sound, tap Preview | Each plays, and sounds distinct |
+| **Play all five from across the room at sleeping volume** | Loud enough to wake you — the one judgement no metric can make |
 | Pick a sound, then let a real alarm ring | The notification uses **that** sound, not the default |
 | Change the sound while armed, then ring | Still the newly chosen one (all 56 were rebuilt) |
 | Do reps, then change the sound, then wait | That morning does **not** start ringing again |
