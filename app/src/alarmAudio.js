@@ -45,5 +45,19 @@ export const stopKeepalive  = () => call('stopKeepalive');
 export const fireAlarm = (sound, morning) => call('fireAlarm', { sound, morning });
 /** The only thing that silences it. */
 export const stopAlarm = () => call('stopAlarm');
-/** { ringing, keepalive, sound, wasRingingAtLaunch, morning } */
+/**
+ * Hand the next fire time to the native side.
+ *
+ * This is what makes the alarm work with the phone locked. The transition used
+ * to be driven from JS via the localNotificationReceived listener, but iOS only
+ * delivers that to a FOREGROUND app, and a backgrounded WKWebView is not
+ * running JS at all - so the alarm simply never started.
+ *
+ * @param at epoch ms
+ */
+export const scheduleAlarm = (at, sound, morning) =>
+  call('scheduleAlarm', { at, sound, morning });
+export const clearScheduledAlarm = () => call('clearScheduledAlarm');
+
+/** { ringing, keepalive, sound, wasRingingAtLaunch, morning, scheduledAt, monitoring } */
 export const getState  = () => call('getState');

@@ -69,6 +69,24 @@ already wraps AlarmKit — but that does not change the verdict.
 
 It is still worth revisiting if Apple ever allows a custom dismissal condition.
 
+#### How the fire time is triggered (this was the background bug)
+
+The keepalive session starts at **arm time**, in the foreground. The switch
+from keepalive to the alarm sound is then driven **natively**: the fire time is
+handed to the plugin, which watches it with a repeating `Timer` on the main run
+loop in `.common` mode, and calls `fireAlarm` itself.
+
+It has to be native. The first version drove that transition from JavaScript,
+through the `localNotificationReceived` listener — and iOS only delivers that
+to a **foreground** app (it maps to `userNotificationCenter(_:willPresent:)`),
+while a backgrounded `WKWebView` is not running JS at all. So with the phone
+locked the keepalive played its silence, the notification made its ≤30 s of
+noise, and the continuous alarm never started. Foreground worked, locked did
+not, which is exactly how it presented.
+
+JS hands the fire time over at arm time, again after a completed set, and again
+whenever the app comes forward. It never drives the ring itself.
+
 #### What kills the audio alarm
 
 **Force-quitting from the app switcher.** iOS tears the process down and the
@@ -466,7 +484,47 @@ ios-assets/      where the alarm sound goes (TODO)
 
 ## Device test plan (none of this can be verified off-device)
 
-### 0. The continuous alarm — do these first
+### 0a. The exact sequence for the locked-phone alarm
+
+This is the one that was broken. Do it first, and do it literally.
+
+1. Build and run on the device from Xcode. In **Signing & Capabilities**,
+   confirm **Background Modes → Audio** is ticked. (`UIBackgroundModes: audio`
+   is already in `Info.plist`; the checkbox is just Xcode's view of that key.
+   Background audio needs no entitlement.)
+2. Open Dawn. Set the alarm **3 minutes** ahead. Pick **reveille** (the most
+   obvious one). Turn the volume up — it rings at *media* volume.
+3. Tap **Arm the alarm**.
+4. **Look at the armed screen before you do anything else.** If it shows a red
+   box saying *"The continuous alarm is NOT running"*, stop — the audio session
+   did not come up, and the parenthesis tells you which part failed. Everything
+   below will fail too.
+5. Press the side button to **lock the phone**. Do **not** swipe the app away.
+6. Put it down and wait past the alarm time.
+
+**What you should hear:** at the alarm time, the chosen sound starts and
+**keeps going** — continuously, on loop, with the screen still locked. It does
+not stop after 30 seconds. It does not stop after a minute. It keeps ringing
+until you unlock, open Dawn and do the push-ups.
+
+You may also hear the notification fire at the same moment. That is the backup
+running alongside, and is expected.
+
+**If instead you hear a ~30 s notification sound, then silence, then another
+about a minute later:** the audio path is still not running and only the
+fallback is working — the same symptom as before. Check step 4's warning box,
+then Xcode's console for `DawnAlarmAudio:` lines.
+
+Then, still locked, confirm the rest:
+
+| Then | Expected |
+|---|---|
+| Let it ring 5 minutes untouched | Still ringing |
+| Unlock and open Dawn | Ring screen, still ringing |
+| Do the push-ups | Stops immediately and stays stopped |
+| Check the armed screen | Armed for tomorrow, no red box |
+
+### 0b. The continuous alarm — the rest
 
 Everything below this section predates the audio alarm. These are the new ones,
 and the highest priority, because none of it has ever run.

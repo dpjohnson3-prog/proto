@@ -249,6 +249,15 @@ export const RINGER_ADVISORY =
 
 // Nothing can survive a force-quit: iOS tears the process down and the audio
 // with it. Saying so is better than a user discovering it by oversleeping.
+// Shown when the background audio session did not come up. Without it there is
+// no continuous alarm at all - only the notification bursts, which stop on
+// their own after a few minutes. Silently degrading to that is the difference
+// between waking up and not.
+export const AUDIO_FAILED_ADVISORY =
+  'The continuous alarm is NOT running. Only the backup notifications are ' +
+  'scheduled, and those stop on their own after a few minutes. Disarm and arm ' +
+  'again; if it keeps saying this, the alarm cannot be relied on to wake you.';
+
 export const FORCE_QUIT_ADVISORY =
   'Do not swipe the app away in the app switcher. That kills the continuous ' +
   'alarm - only the backup notifications would be left, and those stop on ' +

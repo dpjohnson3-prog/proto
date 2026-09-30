@@ -33,6 +33,8 @@ public class DawnAlarmAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "startKeepalive", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopKeepalive",  returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "fireAlarm",      returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "scheduleAlarm",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearScheduledAlarm", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopAlarm",      returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getState",       returnType: CAPPluginReturnPromise)
     ]
@@ -70,6 +72,21 @@ public class DawnAlarmAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Hand the fire time to the native side so the transition does not depend
+    /// on JavaScript, which is not running when the phone is locked.
+    @objc func scheduleAlarm(_ call: CAPPluginCall) {
+        let at = call.getDouble("at") ?? 0
+        let sound = call.getString("sound") ?? "chime.wav"
+        let morning = call.getString("morning") ?? ""
+        engine.scheduleAlarm(atEpochMs: at, soundFile: sound, morning: morning)
+        call.resolve(engine.stateDictionary())
+    }
+
+    @objc func clearScheduledAlarm(_ call: CAPPluginCall) {
+        engine.clearScheduledAlarm()
+        call.resolve(engine.stateDictionary())
+    }
+
     @objc func stopAlarm(_ call: CAPPluginCall) {
         // Back to keepalive rather than tearing the session down: the alarm is
         // over but the app may still be armed for tomorrow.
@@ -90,6 +107,15 @@ final class DawnAlarmEngine {
     private var alarmPlayer: AVAudioPlayer?
     private var wasRingingAtLaunch = false
     private var interruptedWhileRinging = false
+    private var monitor: Timer?
+
+    /// How often the native side checks whether the alarm is due. The app is
+    /// kept alive by the audio session, so this timer really does run while
+    /// backgrounded - which is the entire point of it existing.
+    private let monitorSeconds = 10.0
+    /// If the fire time passed longer ago than this, do not suddenly start
+    /// blaring - the phone was probably off. The notifications cover that case.
+    private let staleMs = 60.0 * 60.0 * 1000.0
 
     var onStateChange: (([String: Any]) -> Void)?
 
@@ -98,6 +124,9 @@ final class DawnAlarmEngine {
     private let kRinging = "dawn.audio.ringing"
     private let kMorning = "dawn.audio.morning"
     private let kSound   = "dawn.audio.sound"
+    private let kFireAt        = "dawn.audio.fireAt"
+    private let kSchedSound    = "dawn.audio.schedSound"
+    private let kSchedMorning  = "dawn.audio.schedMorning"
 
     private init() {
         let nc = NotificationCenter.default
@@ -120,7 +149,11 @@ final class DawnAlarmEngine {
             // True when the process died (force-quit, crash, reboot) while an
             // alarm was supposed to be ringing. JS decides whether to resume.
             "wasRingingAtLaunch": wasRingingAtLaunch,
-            "morning": UserDefaults.standard.string(forKey: kMorning) ?? ""
+            "morning": UserDefaults.standard.string(forKey: kMorning) ?? "",
+            // Epoch ms of the next natively-scheduled ring, 0 if none, plus
+            // whether the timer that watches for it is actually running.
+            "scheduledAt": UserDefaults.standard.double(forKey: kFireAt),
+            "monitoring": monitor != nil
         ]
     }
 
@@ -173,11 +206,74 @@ final class DawnAlarmEngine {
 
     func startKeepalive() {
         guard !isRinging else { return }
+        startMonitor()     // the schedule is watched for as long as we are armed
         if isKeepingAlive { return }
         activateForKeepalive()
-        keepalivePlayer = player(for: "keepalive.wav", volume: 0.0, loops: -1)
+        // volume 1.0, NOT 0.0: keepalive.wav is generated at 3 LSB (-80.8 dBFS)
+        // precisely so the session is never fed pure digital silence, which is
+        // a good way to get an app suspended. Muting the player here would
+        // output exact zeroes and throw that mitigation away. It is inaudible
+        // at full volume already.
+        keepalivePlayer = player(for: "keepalive.wav", volume: 1.0, loops: -1)
         keepalivePlayer?.play()
         emit()
+    }
+
+    // MARK: - Native scheduling
+    //
+    // The transition from keepalive to alarm MUST happen natively. It used to
+    // be driven from JavaScript, reached through the localNotificationReceived
+    // listener - but iOS only calls that when the app is in the FOREGROUND
+    // (it maps to userNotificationCenter(_:willPresent:)), and a WKWebView in a
+    // backgrounded app is not running JS anyway. So with the phone locked the
+    // keepalive kept playing silence, the notification made its 30 seconds of
+    // noise, and the continuous alarm never started. That was the whole bug.
+
+    func scheduleAlarm(atEpochMs: Double, soundFile: String, morning: String) {
+        let d = UserDefaults.standard
+        d.set(atEpochMs, forKey: kFireAt)
+        d.set(soundFile, forKey: kSchedSound)
+        d.set(morning, forKey: kSchedMorning)
+        startMonitor()
+        emit()
+    }
+
+    func clearScheduledAlarm() {
+        UserDefaults.standard.removeObject(forKey: kFireAt)
+        emit()
+    }
+
+    private func startMonitor() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard self.monitor == nil else { return }
+            let t = Timer(timeInterval: self.monitorSeconds, repeats: true) { [weak self] _ in
+                self?.tick()
+            }
+            t.tolerance = 2.0   // let iOS coalesce it; a few seconds late is fine
+            RunLoop.main.add(t, forMode: .common)
+            self.monitor = t
+        }
+    }
+
+    private func stopMonitor() {
+        DispatchQueue.main.async { [weak self] in
+            self?.monitor?.invalidate()
+            self?.monitor = nil
+        }
+    }
+
+    private func tick() {
+        guard !isRinging else { return }
+        let d = UserDefaults.standard
+        let fireAt = d.double(forKey: kFireAt)
+        guard fireAt > 0 else { return }
+        let now = Date().timeIntervalSince1970 * 1000.0
+        guard now >= fireAt else { return }
+        d.removeObject(forKey: kFireAt)
+        guard now - fireAt < staleMs else { emit(); return }
+        fireAlarm(soundFile: d.string(forKey: kSchedSound) ?? "chime.wav",
+                  morning: d.string(forKey: kSchedMorning) ?? "")
     }
 
     // MARK: - Alarm
@@ -213,17 +309,21 @@ final class DawnAlarmEngine {
         let d = UserDefaults.standard
         d.set(false, forKey: kRinging)
         d.removeObject(forKey: kMorning)
+        // This morning is done. JS schedules the next one after topUp().
+        d.removeObject(forKey: kFireAt)
         wasRingingAtLaunch = false
         if returningToKeepalive { startKeepalive() } else { deactivate() }
         emit()
     }
 
     func stopEverything() {
+        stopMonitor()
         alarmPlayer?.stop(); alarmPlayer = nil
         keepalivePlayer?.stop(); keepalivePlayer = nil
         let d = UserDefaults.standard
         d.set(false, forKey: kRinging)
         d.removeObject(forKey: kMorning)
+        d.removeObject(forKey: kFireAt)
         wasRingingAtLaunch = false
         deactivate()
         emit()

@@ -363,9 +363,58 @@ check('keepalive mixes with other audio (does not stop a podcast)',
 check('the alarm does NOT mix - it takes the session over',
   /activateForAlarm[\s\S]{0,300}options: \[\]\)/.test(swift));
 check('the alarm loops forever (numberOfLoops = -1)', /numberOfLoops = loops/.test(swift) && /loops: -1/.test(swift));
-check('the keepalive loop is silent (volume 0)', /keepalive\.wav", volume: 0\.0/.test(swift));
+// NOT volume 0: the keepalive file is generated at 3 LSB (-80.8 dBFS) so the
+// session is never fed pure digital silence. Muting the player would output
+// exact zeroes and throw that away. Inaudibility is the FILE's job (asserted
+// in verify-sounds.py); the player must actually emit it.
+check('the keepalive player is not muted',
+  /keepalive\.wav", volume: 1\.0/.test(swift));
+check('...and inaudibility comes from the file instead',
+  /3\.0 \/ 32767/.test(fs.readFileSync(path.join(ROOT, 'scripts/make-sounds.py'), 'utf8')));
 check('a near-silent keepalive file is generated',
   fs.existsSync(path.join(ROOT, 'ios/App/App/keepalive.wav')));
+
+console.log('\n-- the alarm-time transition must be NATIVE --');
+// The bug this replaced: the transition was driven from JS via the
+// localNotificationReceived listener. iOS only delivers that to a FOREGROUND
+// app, and a backgrounded WKWebView is not running JS at all - so with the
+// phone locked the keepalive played silence and the alarm never started.
+check('the plugin schedules the fire time itself', /func scheduleAlarm/.test(swift));
+check('...watched by a repeating native timer',
+  /Timer\(timeInterval: self\.monitorSeconds, repeats: true\)/.test(swift));
+check('...added to the run loop in .common mode (keeps firing while scrolling)',
+  /RunLoop\.main\.add\(t, forMode: \.common\)/.test(swift));
+check('...which fires the alarm without any JS involvement',
+  /private func tick\(\)[\s\S]{0,600}fireAlarm\(soundFile:/.test(swift));
+check('the monitor starts with the keepalive, at arm time',
+  /func startKeepalive\(\)[\s\S]{0,200}startMonitor\(\)/.test(swift));
+check('a stale fire time does not suddenly blare',
+  /staleMs/.test(swift) && /now - fireAt < staleMs/.test(swift));
+check('disarming stops the monitor', /func stopEverything[\s\S]{0,120}stopMonitor\(\)/.test(swift));
+check('a completed set clears the scheduled fire time',
+  /func stopAlarm[\s\S]{0,420}removeObject\(forKey: kFireAt\)/.test(swift));
+
+check('JS hands the fire time over at arm time',
+  /alarmAudio\.scheduleAlarm\(built\.first\.getTime\(\)/.test(main));
+check('...and again after a completed set and on foreground',
+  (main.match(/rescheduleNativeAlarm\(/g) || []).length >= 3);
+check('...and clears it on disarm', /alarmAudio\.clearScheduledAlarm\(\)/.test(main));
+check('coming forward adopts an alarm that started while backgrounded',
+  /st\.ringing && !counter\.isRunning\(\)/.test(main));
+check('boot checks the audio state BEFORE painting (showAlarmScreen stops rings)',
+  main.indexOf('const st = await alarmAudio.getState()') < main.lastIndexOf('if (!resumed) showAlarmScreen()'));
+
+console.log('\n-- a failed audio session is announced, not hidden --');
+check('there is an explicit audio-failure advisory',
+  typeof A.AUDIO_FAILED_ADVISORY === 'string' && /NOT running/.test(A.AUDIO_FAILED_ADVISORY));
+check('it says what still works', /notifications/i.test(A.AUDIO_FAILED_ADVISORY));
+check('the armed screen has a slot for it', idx.includes('id="audioWarn"'));
+check('health is judged on session + timer + schedule together',
+  /st\.keepalive && st\.monitoring && st\.scheduledAt > 0/.test(main));
+check('arm records what the plugin actually reported',
+  /lastAudioState = audioState/.test(main));
+check('the warning names which part failed',
+  /audio session not running/.test(main) && /no fire time scheduled/.test(main));
 
 console.log('\n-- the three ways audio dies on its own --');
 check('interruptions are observed (call, Siri)', /interruptionNotification/.test(swift));

@@ -18,6 +18,11 @@ let counter = null;
 // run would cancel the 06:30 alarm it was meant to rehearse.
 let activeRing = null;
 
+// Last state reported by the native audio plugin. Drives the armed-screen
+// warning: an alarm that silently fell back to notifications is exactly the
+// kind of failure this app keeps trying not to have.
+let lastAudioState = null;
+
 // ---------------------------------------------------------------------------
 // Alarm sound.
 // ---------------------------------------------------------------------------
@@ -158,6 +163,17 @@ function playPreview(){
   previewTimer = setTimeout(stopPreview, 6000);
 }
 
+// Keep the native scheduler pointed at the next ring. `built` is whatever
+// arm()/topUp() returned, or null when topUp decided to leave things alone.
+async function rescheduleNativeAlarm(built){
+  if (!alarmAudio.isNativeAudio) return;
+  if (built && built.first && built.mornings && built.mornings.length){
+    await alarmAudio.scheduleAlarm(built.first.getTime(),
+                                   alarm.soundFile(settings.sound),
+                                   built.mornings[0].key);
+  }
+}
+
 // The lapse warning is informational: tapping it must open the app, not start
 // an alarm. Anything with kind 'ring' is a real ring and carries its morning.
 function handleNotification(n){
@@ -201,6 +217,7 @@ function renderArmState(){
     $('armThrough').textContent = '';
     $('ringerNote').textContent = '';
     $('quitNote').textContent = '';
+    $('audioWarn').classList.add('hide');
     return;
   }
   const [h, m] = settings.time.split(':').map(Number);
@@ -214,6 +231,31 @@ function renderArmState(){
   // still be here later, when someone is working out why nothing rang.
   $('ringerNote').textContent = alarm.RINGER_ADVISORY;
   $('quitNote').textContent = alarmAudio.isNativeAudio ? alarm.FORCE_QUIT_ADVISORY : '';
+  renderAudioHealth();
+}
+
+// The continuous alarm is the whole product. If the audio session is not
+// actually up, or nothing is watching for the fire time, say so on the armed
+// screen rather than letting it look armed and quietly fall back to beeps.
+function renderAudioHealth(){
+  const box = $('audioWarn');
+  if (!alarmAudio.isNativeAudio || !settings.armed){
+    box.classList.add('hide');
+    return;
+  }
+  const st = lastAudioState;
+  const healthy = !!(st && st.keepalive && st.monitoring && st.scheduledAt > 0);
+  box.classList.toggle('hide', healthy);
+  if (!healthy){
+    const missing = [];
+    if (!st) missing.push('no response from the audio plugin');
+    else {
+      if (!st.keepalive) missing.push('audio session not running');
+      if (!st.monitoring) missing.push('no timer watching for the alarm');
+      if (!(st.scheduledAt > 0)) missing.push('no fire time scheduled');
+    }
+    box.textContent = alarm.AUDIO_FAILED_ADVISORY + ' (' + missing.join('; ') + ')';
+  }
 }
 
 async function enterRing({ real = false, morning = null } = {}){
@@ -279,7 +321,9 @@ $('armBtn').onclick = async () => {
     settings.armed = false;
     await saveSettings(settings);
     if (isNative) await alarm.disarm();
+    await alarmAudio.clearScheduledAlarm();
     await alarmAudio.stopKeepalive();   // release the audio session
+    lastAudioState = null;
     showAlarmScreen();
     return;
   }
@@ -314,10 +358,17 @@ $('armBtn').onclick = async () => {
 
   const built = await alarm.arm(settings.time, settings.goal, settings.sound);
   const first = built && built.first;
-  // Hold the audio session open from now until the alarm fires. This is what
-  // lets it ring continuously, and past the silent switch. It also costs
-  // battery overnight - see README.
-  await alarmAudio.startKeepalive();
+  // Hold the audio session open from now until the alarm fires, and hand the
+  // fire time to the native side so the ring does not depend on JS running.
+  const audioState = await alarmAudio.startKeepalive();
+  if (built && built.first && built.mornings && built.mornings.length){
+    await alarmAudio.scheduleAlarm(built.first.getTime(),
+                                   alarm.soundFile(settings.sound),
+                                   built.mornings[0].key);
+  }
+  // If the session did not actually come up, the continuous alarm is not going
+  // to happen and the user must be told now, not at 06:31.
+  lastAudioState = audioState;
   settings.armed = true;
   await saveSettings(settings);
   renderArmState();
@@ -397,8 +448,12 @@ async function boot(){
       activeRing = null;
       if (!isNative || !ring || !ring.real) return;
       await alarm.markSatisfied(ring.morning);
-      // Now this morning is settled, refill the window to its full depth.
-      if (settings.armed) await alarm.topUp(settings.time, settings.goal, settings.sound);
+      // Now this morning is settled, refill the window to its full depth and
+      // hand the NEXT morning's fire time to the native scheduler.
+      if (settings.armed){
+        const next = await alarm.topUp(settings.time, settings.goal, settings.sound);
+        await rescheduleNativeAlarm(next);
+      }
       renderArmState();
     }
   });
@@ -416,27 +471,47 @@ async function boot(){
     });
 
     App.addListener('appStateChange', async ({ isActive }) => {
-      if (isActive && settings.armed) await alarm.topUp(settings.time, settings.goal, settings.sound);
+      if (!isActive) return;
+      if (settings.armed){
+        const next = await alarm.topUp(settings.time, settings.goal, settings.sound);
+        await rescheduleNativeAlarm(next);
+      }
+      // The native side may have started ringing while we were backgrounded.
+      // Coming forward is the first chance JS gets to show the ring screen.
+      const st = await alarmAudio.getState();
+      lastAudioState = st;
+      if (st && st.ringing && !counter.isRunning()){
+        await enterRing({ real: true, morning: st.morning || alarm.dayKey(new Date()) });
+      }
+      renderArmState();
     });
 
     if (settings.armed) await alarm.topUp(settings.time, settings.goal, settings.sound);
   }
 
-  showAlarmScreen();
-
-  // The process can come back while an alarm should still be ringing - a
-  // force-quit, a crash, a reboot. The plugin records that it was ringing but
-  // deliberately does NOT resume on its own: enterRing() is the gate, so the
-  // satisfied-morning record still decides, and a morning already completed
-  // stays silent.
+  // Ask the native side FIRST. showAlarmScreen() calls stopRinging(), so
+  // painting it before this check would silence an alarm that is ringing right
+  // now, then immediately restart it.
+  let resumed = false;
   if (alarmAudio.isNativeAudio){
     const st = await alarmAudio.getState();
-    if (st && st.wasRingingAtLaunch){
+    lastAudioState = st;
+    // st.ringing: the native timer fired while we were backgrounded and it is
+    // sounding right now. wasRingingAtLaunch: the process died mid-ring and
+    // came back. Either way enterRing() is the gate, so the satisfied-morning
+    // record still decides and a completed morning stays silent.
+    if (st && (st.ringing || st.wasRingingAtLaunch)){
       await enterRing({ real: true, morning: st.morning || alarm.dayKey(new Date()) });
+      resumed = counter.show && activeRing !== null;
     } else if (settings.armed && !st.keepalive){
-      await alarmAudio.startKeepalive();   // armed but the session died with the process
+      // Armed, but the session died with the process. Rebuild it and re-hand
+      // the fire time over, or the continuous alarm is quietly gone.
+      lastAudioState = await alarmAudio.startKeepalive();
+      const next = await alarm.topUp(settings.time, settings.goal, settings.sound);
+      await rescheduleNativeAlarm(next);
     }
   }
+  if (!resumed) showAlarmScreen();
 }
 
 boot();
