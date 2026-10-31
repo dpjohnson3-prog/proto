@@ -416,6 +416,59 @@ check('arm records what the plugin actually reported',
 check('the warning names which part failed',
   /audio session not running/.test(main) && /no fire time scheduled/.test(main));
 
+console.log('\n-- the Swift must actually compile --');
+// None of this is a compiler. It catches the specific mistakes that are
+// invisible on Linux and fatal in Xcode - the file sat unbuilt for weeks with
+// a hard error in it because nothing here could see one.
+const engineDecl = (swift.match(/final class DawnAlarmEngine[^{]*\{/) || [''])[0];
+const hasObjcMembers = /@objc\s+(private\s+)?func/.test(swift);
+check('classes with @objc members derive from NSObject',
+  !hasObjcMembers || /class DawnAlarmEngine\s*:\s*NSObject/.test(engineDecl),
+  engineDecl.trim().replace(/\{$/, ''));
+// Swift: "method cannot be marked @objc because its class does not inherit
+// from NSObject". #selector needs @objc, so the two go together.
+const selectors = [...swift.matchAll(/#selector\((\w+)\(/g)].map(m => m[1]);
+check('every #selector target is @objc', selectors.length > 0 &&
+  selectors.every(n => new RegExp('@objc[^\\n]*func ' + n + '\\(').test(swift)),
+  selectors.join(', '));
+check('an NSObject subclass calls super.init() before using self',
+  !/class DawnAlarmEngine\s*:\s*NSObject/.test(swift) ||
+  /private override init\(\)\s*\{\s*\n\s*super\.init\(\)/.test(swift));
+
+// A CAPPluginMethod with no matching @objc func does not fail to build - it
+// fails at runtime, when the JS call finds nothing. Worse than a compile error.
+const declared = [...swift.matchAll(/CAPPluginMethod\(name: "(\w+)"/g)].map(m => m[1]);
+const implemented = [...swift.matchAll(/@objc func (\w+)\(_ call: CAPPluginCall\)/g)].map(m => m[1]);
+check('every declared plugin method is implemented',
+  declared.length > 0 && declared.every(n => implemented.includes(n)),
+  `${declared.length} declared, ${implemented.length} implemented`);
+check('and nothing is implemented but undeclared (unreachable from JS)',
+  implemented.every(n => declared.includes(n)),
+  implemented.filter(n => !declared.includes(n)).join(',') || 'none');
+// The JS bridge and the Swift must agree on names, or the call throws.
+const bridgeCalls = [...bridge.matchAll(/call\('(\w+)'/g)].map(m => m[1]);
+check('every method the JS bridge calls exists in the plugin',
+  bridgeCalls.every(n => declared.includes(n)),
+  bridgeCalls.filter(n => !declared.includes(n)).join(',') || 'all present');
+
+console.log('\n-- signing and entitlements --');
+const ent = fs.readFileSync(path.join(ROOT, 'ios/App/App/App.entitlements'), 'utf8');
+check('Time Sensitive Notifications entitlement is present',
+  /com\.apple\.developer\.usernotifications\.time-sensitive/.test(ent));
+check('...and set to true', /time-sensitive<\/key>\s*<true\/>/.test(ent));
+const pbx = fs.readFileSync(path.join(ROOT, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8');
+check('a development team is set', /DEVELOPMENT_TEAM = \w+;/.test(pbx),
+  (pbx.match(/DEVELOPMENT_TEAM = (\w+);/) || [])[1] || '');
+check('both App configurations carry it',
+  (pbx.match(/DEVELOPMENT_TEAM = \w+;/g) || []).length === 2);
+check('the entitlements file is wired into signing',
+  (pbx.match(/CODE_SIGN_ENTITLEMENTS = "App\/App\.entitlements";/g) || []).length === 2);
+check('signing stays automatic', !/CODE_SIGN_STYLE = Manual/.test(pbx));
+check('the bundle id is unchanged',
+  (pbx.match(/PRODUCT_BUNDLE_IDENTIFIER = com\.dpjohnson\.dawnalarm;/g) || []).length === 2);
+check('the signing script is committed and re-runnable',
+  fs.existsSync(path.join(ROOT, 'scripts/configure-ios-signing.cjs')));
+
 console.log('\n-- the three ways audio dies on its own --');
 check('interruptions are observed (call, Siri)', /interruptionNotification/.test(swift));
 check('...and the alarm resumes afterwards',

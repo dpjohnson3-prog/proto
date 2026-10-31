@@ -44,6 +44,7 @@
 		D73ECA13E83B4C1CB3AF26D3 /* reveille.wav */ = {isa = PBXFileReference; name = "reveille.wav"; path = "reveille.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = audio.wav; explicitFileType = undefined; includeInIndex = 0; };
 		85AED6E0067E43958D42AFED /* keepalive.wav */ = {isa = PBXFileReference; name = "keepalive.wav"; path = "keepalive.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = audio.wav; explicitFileType = undefined; includeInIndex = 0; };
 		9E02314896C64069B5420849 /* DawnAlarmAudio.swift */ = {isa = PBXFileReference; name = "DawnAlarmAudio.swift"; path = "DawnAlarmAudio.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		846ED6BDF5BF48B3A0301D06 /* App.entitlements */ = {isa = PBXFileReference; name = "App.entitlements"; path = "App.entitlements"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = text.plist.entitlements; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +95,7 @@
 				D73ECA13E83B4C1CB3AF26D3 /* reveille.wav */,
 				85AED6E0067E43958D42AFED /* keepalive.wav */,
 				9E02314896C64069B5420849 /* DawnAlarmAudio.swift */,
+				846ED6BDF5BF48B3A0301D06 /* App.entitlements */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -342,6 +344,8 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				DEVELOPMENT_TEAM = UMPTW639PG;
+				CODE_SIGN_ENTITLEMENTS = "App/App.entitlements";
 			};
 			name = Debug;
 		};
@@ -363,6 +367,8 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				DEVELOPMENT_TEAM = UMPTW639PG;
+				CODE_SIGN_ENTITLEMENTS = "App/App.entitlements";
 			};
 			name = Release;
 		};

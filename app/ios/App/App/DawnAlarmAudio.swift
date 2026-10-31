@@ -99,7 +99,12 @@ public class DawnAlarmAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
-final class DawnAlarmEngine {
+/// Inherits NSObject because the three notification handlers below are @objc
+/// and reached via #selector. Swift refuses to mark a member @objc unless its
+/// class derives from NSObject ("method cannot be marked @objc because its
+/// class does not inherit from NSObject"), so without this the file does not
+/// compile at all.
+final class DawnAlarmEngine: NSObject {
     static let shared = DawnAlarmEngine()
 
     private let session = AVAudioSession.sharedInstance()
@@ -128,7 +133,8 @@ final class DawnAlarmEngine {
     private let kSchedSound    = "dawn.audio.schedSound"
     private let kSchedMorning  = "dawn.audio.schedMorning"
 
-    private init() {
+    private override init() {
+        super.init()
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(handleInterruption(_:)),
                        name: AVAudioSession.interruptionNotification, object: nil)
