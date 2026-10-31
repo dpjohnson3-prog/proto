@@ -464,8 +464,18 @@ check('both App configurations carry it',
 check('the entitlements file is wired into signing',
   (pbx.match(/CODE_SIGN_ENTITLEMENTS = "App\/App\.entitlements";/g) || []).length === 2);
 check('signing stays automatic', !/CODE_SIGN_STYLE = Manual/.test(pbx));
-check('the bundle id is unchanged',
-  (pbx.match(/PRODUCT_BUNDLE_IDENTIFIER = com\.dpjohnson\.dawnalarm;/g) || []).length === 2);
+// Read the id rather than pinning it: the real risk when renaming is the
+// Xcode project and capacitor.config.json drifting apart, which a hardcoded
+// string cannot see.
+const appId = JSON.parse(fs.readFileSync(path.join(ROOT, 'capacitor.config.json'), 'utf8')).appId;
+check('capacitor.config.json has a reverse-DNS appId', /^[a-z0-9.]+\.[a-z0-9]+$/.test(appId), appId);
+check('both Xcode configurations use that exact id',
+  (pbx.match(new RegExp('PRODUCT_BUNDLE_IDENTIFIER = ' + appId.replace(/\./g, '\\.') + ';', 'g')) || []).length === 2,
+  appId);
+const bundleLines = pbx.split('\n').filter(l => l.includes('PRODUCT_BUNDLE_IDENTIFIER'));
+check('no stale bundle id is left in the Xcode project',
+  bundleLines.length > 0 && bundleLines.every(l => l.includes(appId)),
+  `${bundleLines.length} line(s), all = ${appId}`);
 check('the signing script is committed and re-runnable',
   fs.existsSync(path.join(ROOT, 'scripts/configure-ios-signing.cjs')));
 
