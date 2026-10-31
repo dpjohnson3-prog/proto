@@ -5,3 +5,7 @@ ios/App/build/
 ios/DerivedData/
 .DS_Store
 *.log
+
+# Python bytecode from the sound scripts (importlib writes this)
+__pycache__/
+*.pyc

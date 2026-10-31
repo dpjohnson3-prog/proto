@@ -23,6 +23,7 @@ of any particular iPhone. It is here to rank sounds against each other, not to
 predict SPL.
 """
 import cmath, math, os, sys, wave, array
+sys.dont_write_bytecode = True  # these are helpers; do not litter __pycache__
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(HERE)

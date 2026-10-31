@@ -15,7 +15,43 @@ import { chromium } from 'playwright-core';
 import http from 'http';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXE = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// Resolve Chromium rather than hardcoding a build number. The pinned path
+// (chromium-1194) broke the moment the container image shipped chromium-1243:
+// a version bump nobody made is not a reason for a test suite to fail.
+function findChromium(){
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
+  let dirs = [];
+  try {
+    dirs = fs.readdirSync(base)
+      .filter(d => /^chromium(_headless_shell)?-\d+$/.test(d))
+      .sort((a, b) => parseInt(b.split('-').pop()) - parseInt(a.split('-').pop()));
+  } catch (e){ return null; }
+  // Layouts differ between builds (chrome-linux vs chrome-linux64), so try the
+  // stable symlink the image provides first, then fall back to globbing.
+  const stable = path.join(base, 'chromium');
+  if (fs.existsSync(stable)) return stable;
+  const rels = ['chrome-linux64/chrome', 'chrome-linux/chrome',
+                'chrome-linux64/headless_shell', 'chrome-linux/headless_shell',
+                'chrome-mac/Chromium.app/Contents/MacOS/Chromium'];
+  for (const d of dirs){
+    for (const rel of rels){
+      const p = path.join(base, d, rel);
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  return null;
+}
+
+const EXE = findChromium();
+if (!EXE){
+  // This suite renders the page to check the safe-area insets really apply, so
+  // without a browser it cannot run at all. Say so loudly instead of failing
+  // in a way that looks like a regression in the CSS.
+  console.log('SKIPPED: no Chromium found under ' +
+    (process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers') + '.');
+  console.log('The safe-area checks need a browser. The other suites still ran.');
+  process.exit(0);
+}
 const INSET = 44;
 
 function variant(dir){
