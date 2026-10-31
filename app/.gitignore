@@ -9,3 +9,5 @@ ios/DerivedData/
 # Python bytecode from the sound scripts (importlib writes this)
 __pycache__/
 *.pyc
+
+build.log

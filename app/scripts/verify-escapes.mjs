@@ -478,6 +478,21 @@ check('no stale bundle id is left in the Xcode project',
   `${bundleLines.length} line(s), all = ${appId}`);
 check('the signing script is committed and re-runnable',
   fs.existsSync(path.join(ROOT, 'scripts/configure-ios-signing.cjs')));
+// xcodebuild -scheme needs a SHARED scheme; the one Xcode generates on first
+// open lives in xcuserdata and is not committed, so a clean clone cannot build
+// from the command line without this.
+const schemePath = path.join(ROOT, 'ios/App/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme');
+check('a shared App scheme is committed', fs.existsSync(schemePath));
+if (fs.existsSync(schemePath)){
+  const scheme = fs.readFileSync(schemePath, 'utf8');
+  const ids = [...scheme.matchAll(/BlueprintIdentifier = "([0-9A-F]+)"/g)].map(m => m[1]);
+  check('the scheme points at a target that exists',
+    ids.length > 0 && ids.every(id => pbx.includes(id)), ids[0] || '');
+  check('the scheme names the right container',
+    /ReferencedContainer = "container:App\.xcodeproj"/.test(scheme));
+}
+check('the Mac build script is committed',
+  fs.existsSync(path.join(ROOT, 'scripts/mac-build.sh')));
 
 console.log('\n-- the three ways audio dies on its own --');
 check('interruptions are observed (call, Siri)', /interruptionNotification/.test(swift));
