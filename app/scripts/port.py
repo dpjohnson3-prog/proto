@@ -123,7 +123,32 @@ edit("""  var DEBUG = false;
   }""",
 "debug overlay: ?debug=1 kept verbatim, plus a persisted flag, both gated behind import.meta.env.DEV so release builds never reach it")
 
-# 7. expose what the shell needs
+# 7. the camera-bypass demo button must never reach a release build - it
+# satisfies a real ring's push-up requirement with a fake sine-wave signal,
+# defeating the entire point if left reachable on the real ring screen.
+edit("""  s('demoBtn').onclick = function(){
+    demo = true; demoT = 0;
+    preview.classList.remove('on');
+    startCalibration();
+  };""",
+"""  // PORT: demoBtn fakes a signal through the real counting path - completing
+  // a set this way would satisfy a REAL morning with zero actual push-ups
+  // done. Removed outright (not just hidden) in a release build -
+  // import.meta.env.DEV is false there, same mechanism as the debug overlay.
+  // Still wired normally in `vite dev`, for testing the counting UI without
+  // pointing a camera at yourself every time.
+  if (import.meta.env?.DEV){
+    s('demoBtn').onclick = function(){
+      demo = true; demoT = 0;
+      preview.classList.remove('on');
+      startCalibration();
+    };
+  } else {
+    s('demoBtn').remove();
+  }""",
+"demoBtn (camera bypass) removed outright in release builds, same import.meta.env.DEV gate as the debug overlay")
+
+# 8. expose what the shell needs
 edit("""})();""",
 """  // ---- PORT: camera teardown + the handle the shell drives --------------
   // The prototype was a page you closed; an app has to give the camera back.

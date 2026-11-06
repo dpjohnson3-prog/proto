@@ -21,7 +21,8 @@
 //   6. copy: start button label via START_LABEL (handler body unchanged)
 //   7. finish(): added stopCamera() + opts.onFinish(mode,count); againBtn moved to the shell
 //   8. debug overlay: ?debug=1 kept verbatim, plus a persisted flag, both gated behind import.meta.env.DEV so release builds never reach it
-//   9. end: returns {show, stopCamera, reset, isRunning} and gives the camera back
+//   9. demoBtn (camera bypass) removed outright in release builds, same import.meta.env.DEV gate as the debug overlay
+//   10. end: returns {show, stopCamera, reset, isRunning} and gives the camera back
 // ---------------------------------------------------------------------------
 
 export function initCounter(opts){
@@ -162,11 +163,21 @@ export function initCounter(opts){
       });
   };
 
-  s('demoBtn').onclick = function(){
-    demo = true; demoT = 0;
-    preview.classList.remove('on');
-    startCalibration();
-  };
+  // PORT: demoBtn fakes a signal through the real counting path - completing
+  // a set this way would satisfy a REAL morning with zero actual push-ups
+  // done. Removed outright (not just hidden) in a release build -
+  // import.meta.env.DEV is false there, same mechanism as the debug overlay.
+  // Still wired normally in `vite dev`, for testing the counting UI without
+  // pointing a camera at yourself every time.
+  if (import.meta.env?.DEV){
+    s('demoBtn').onclick = function(){
+      demo = true; demoT = 0;
+      preview.classList.remove('on');
+      startCalibration();
+    };
+  } else {
+    s('demoBtn').remove();
+  }
 
   // ---- luminance sampling --------------------------------------------
   function sampleLuma(){

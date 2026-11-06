@@ -68,20 +68,20 @@
 	<array>
 		<string>armv7</string>
 	</array>
+	<!-- Portrait only. TARGETED_DEVICE_FAMILY is iPhone-only now, so there is
+	     no ~ipad variant of this key to keep in sync. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- The app is always dark-themed (every screen, including the warm-
+	     gradient done screen) - nothing here adapted to the system's light/
+	     dark setting, so without this the status bar could render dark
+	     content against a dark background whenever the device itself was in
+	     Light Mode. Forced light, unconditionally, everywhere. -->
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleLightContent</string>
 </dict>
 </plist>
