@@ -4,7 +4,11 @@ import { Preferences } from '@capacitor/preferences';
 
 const KEY = 'dawn.alarm';
 
-export const DEFAULTS = { time: '06:30', goal: 10, armed: false, sound: 'chime' };
+// alarmBackend records which alarm mechanism is actually armed, so disarm and
+// the next launch know which one to tear down / check - 'alarmkit' (iOS
+// 26.1+, preferred) or 'legacy' (notifications + background audio, the only
+// option below that, or if AlarmKit authorization was denied).
+export const DEFAULTS = { time: '06:30', goal: 10, armed: false, sound: 'chime', alarmBackend: 'legacy' };
 
 export async function loadSettings(){
   try {

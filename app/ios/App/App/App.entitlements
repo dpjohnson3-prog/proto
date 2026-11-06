@@ -8,7 +8,13 @@
 	     entitlement plus the matching capability on the provisioning profile.
 
 	     Background audio deliberately has no entry here: UIBackgroundModes in
-	     Info.plist is all it needs. -->
+	     Info.plist is all it needs.
+
+	     AlarmKit (DawnAlarmKit.swift) also has no entry here - checked against
+	     the actual installed SDK's bundled resources, nothing requiring an
+	     entitlement or Signing & Capabilities toggle turned up anywhere.
+	     NSAlarmKitUsageDescription in Info.plist plus the runtime
+	     requestAuthorization() call is everything it needs. -->
 	<key>com.apple.developer.usernotifications.time-sensitive</key>
 	<true/>
 </dict>

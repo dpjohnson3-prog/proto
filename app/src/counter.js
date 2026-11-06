@@ -52,7 +52,10 @@ export function initCounter(opts){
   // extremes while discarding one-frame flyers. That is what the old 8% pad
   // was reaching for, except the pad widened the range instead of cleaning it,
   // which made every working rep ~16% harder to complete.
-  var CAL_MS        = 6000;
+  // 6000 was too tight to actually get down on the floor and into frame
+  // before the two slow reps needed to be done - bumped to give real setup
+  // time, not just rep time.
+  var CAL_MS        = 10000;
   var CAL_WARMUP_MS = 900;
   var CAL_PCT       = 0.05;
 

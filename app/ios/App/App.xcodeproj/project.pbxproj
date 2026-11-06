@@ -23,6 +23,8 @@
 		8981F963EDFB4C08AC9E2D7D /* reveille.wav in Resources */ = {isa = PBXBuildFile; fileRef = D73ECA13E83B4C1CB3AF26D3 /* reveille.wav */; };
 		A7A1BEF8A2AD42A0B2AEAF1A /* keepalive.wav in Resources */ = {isa = PBXBuildFile; fileRef = 85AED6E0067E43958D42AFED /* keepalive.wav */; };
 		CAD65FA67511405B9D4E75EF /* DawnAlarmAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E02314896C64069B5420849 /* DawnAlarmAudio.swift */; };
+		945963ECE2EE49A0A16951F0 /* DawnAlarmKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C3AA261F7449F29CB9C591 /* DawnAlarmKit.swift */; };
+		A6E5570AF3484CF48D3F8CD9 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F225CC7A25842E8B105450B /* MainViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +47,8 @@
 		85AED6E0067E43958D42AFED /* keepalive.wav */ = {isa = PBXFileReference; name = "keepalive.wav"; path = "keepalive.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = audio.wav; explicitFileType = undefined; includeInIndex = 0; };
 		9E02314896C64069B5420849 /* DawnAlarmAudio.swift */ = {isa = PBXFileReference; name = "DawnAlarmAudio.swift"; path = "DawnAlarmAudio.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 		846ED6BDF5BF48B3A0301D06 /* App.entitlements */ = {isa = PBXFileReference; name = "App.entitlements"; path = "App.entitlements"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = text.plist.entitlements; explicitFileType = undefined; includeInIndex = 0; };
+		C0C3AA261F7449F29CB9C591 /* DawnAlarmKit.swift */ = {isa = PBXFileReference; name = "DawnAlarmKit.swift"; path = "DawnAlarmKit.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		8F225CC7A25842E8B105450B /* MainViewController.swift */ = {isa = PBXFileReference; name = "MainViewController.swift"; path = "MainViewController.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -96,6 +100,8 @@
 				85AED6E0067E43958D42AFED /* keepalive.wav */,
 				9E02314896C64069B5420849 /* DawnAlarmAudio.swift */,
 				846ED6BDF5BF48B3A0301D06 /* App.entitlements */,
+				C0C3AA261F7449F29CB9C591 /* DawnAlarmKit.swift */,
+				8F225CC7A25842E8B105450B /* MainViewController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -190,6 +196,8 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				CAD65FA67511405B9D4E75EF /* DawnAlarmAudio.swift in Sources */,
+				945963ECE2EE49A0A16951F0 /* DawnAlarmKit.swift in Sources */,
+				A6E5570AF3484CF48D3F8CD9 /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

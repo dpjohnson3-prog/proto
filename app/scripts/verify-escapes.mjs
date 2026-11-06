@@ -5,7 +5,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { initCounter } = await import(path.join(ROOT, 'src/counter.js'));
 const A = await import(path.join(ROOT, 'src/alarm.js'));
 const { RING_BURST, BURST_GAP_MIN, DAYS_AHEAD, IOS_PENDING_CAP, RESERVED_SLOTS,
-        WARN_LEAD_DAYS, WARN_HOUR, RING_GRACE_MIN,
+        WARN_LEAD_DAYS, WARN_HOUR, RING_GRACE_MIN, NATIVE_SYNC_BUFFER_MS,
         plan, buildNotifications, shouldRing, inRingWindow, dayKey,
         armedThrough, slotsUsed, backArrowVisible, RINGER_ADVISORY,
         SOUNDS, DEFAULT_SOUND, soundFile, soundUrl, soundOf, isSound,
@@ -77,13 +77,13 @@ check('skip calibration -> timer -> onFinish', !!s.fin && s.fin.mode==='timer');
 s=await boot(); run(s.H,9000);
 const pend=s.H.doc.getElementById; s.H.doc.getElementById('recal').onclick();
 check('recalibrate returns to calibration', on(s.H,'sCal'));
-run(s.H,7000);
+run(s.H,11000);
 check('recalibrate leads back to counting', on(s.H,'sCount'));
 
 s=await boot(3); run(s.H,6200); run(s.H,20000);
 check('completing the goal -> onFinish fires', !!s.fin, s.fin?`mode=${s.fin.mode} count=${s.fin.count}`:'NEVER FIRED');
 
-s=await boot(5,true); run(s.H,6500);
+s=await boot(5,true); run(s.H,11000);
 check('flat signal refused at calibration (not silently counting)',
   String(s.H.doc.getElementById('calTitle').textContent).includes('enough movement'));
 
@@ -129,8 +129,10 @@ check('every ring is in the future', times.every(t => t > EVE));
 check('rings are strictly increasing', times.every((t, i) => i === 0 || t > times[i-1]));
 check('first ring is the next 06:30',
   times[0].getHours() === 6 && times[0].getMinutes() === 30);
-check('burst spacing is BURST_GAP_MIN',
-  (times[1] - times[0]) === BURST_GAP_MIN * 60000);
+check('burst zero is pushed back from the native engine\'s fire time, not simultaneous',
+  (times[0] - built.mornings[0].times[0]) === NATIVE_SYNC_BUFFER_MS);
+check('burst spacing from burst one onward is BURST_GAP_MIN',
+  (times[2] - times[1]) === BURST_GAP_MIN * 60000);
 check('armedThrough is the last burst of the last morning',
   armedThrough(built.mornings).getTime() === times[times.length-1].getTime());
 const passed = buildNotifications('06:30', 10, new Date('2026-03-01T07:00:00'), null);
@@ -437,8 +439,14 @@ check('an NSObject subclass calls super.init() before using self',
 
 // A CAPPluginMethod with no matching @objc func does not fail to build - it
 // fails at runtime, when the JS call finds nothing. Worse than a compile error.
-const declared = [...swift.matchAll(/CAPPluginMethod\(name: "(\w+)"/g)].map(m => m[1]);
-const implemented = [...swift.matchAll(/@objc func (\w+)\(_ call: CAPPluginCall\)/g)].map(m => m[1]);
+// Implementations can live in an extension in another file (the AlarmKit
+// spike does this, in DawnAlarmKitSpike.swift, to keep it out of the real
+// engine's file entirely) - checked against the union of both, defensively,
+// so this keeps working once that throwaway file is deleted.
+const SPIKE_PATH = path.join(ROOT, 'ios/App/App/DawnAlarmKitSpike.swift');
+const pluginSwift = swift + (fs.existsSync(SPIKE_PATH) ? '\n' + fs.readFileSync(SPIKE_PATH, 'utf8') : '');
+const declared = [...pluginSwift.matchAll(/CAPPluginMethod\(name: "(\w+)"/g)].map(m => m[1]);
+const implemented = [...pluginSwift.matchAll(/@objc func (\w+)\(_ call: CAPPluginCall\)/g)].map(m => m[1]);
 check('every declared plugin method is implemented',
   declared.length > 0 && declared.every(n => implemented.includes(n)),
   `${declared.length} declared, ${implemented.length} implemented`);
@@ -506,8 +514,10 @@ check('ringing state is persisted for relaunch', /UserDefaults[\s\S]{0,200}kRing
 
 console.log('\n-- the satisfied morning still decides, not the audio --');
 check('the plugin does not resume on its own',
-  /restoreAfterLaunch[\s\S]{0,300}wasRingingAtLaunch = UserDefaults/.test(swift) &&
-  !/restoreAfterLaunch[\s\S]{0,300}fireAlarm\(/.test(swift));
+  /func restoreAfterLaunch\(\)[\s\S]{0,500}UserDefaults[\s\S]{0,500}wasRingingAtLaunch = /.test(swift) &&
+  !/func restoreAfterLaunch\(\)[\s\S]{0,500}fireAlarm\(/.test(swift));
+check('a stale ringing flag (older than staleMs) is cleared rather than resumed',
+  /func restoreAfterLaunch\(\)[\s\S]{0,500}since[\s\S]{0,100}staleMs/.test(swift));
 check('relaunch resume goes through enterRing (which gates on satisfied)',
   /wasRingingAtLaunch[\s\S]{0,200}enterRing\(\{ real: true/.test(main));
 check('firing is only reachable from startRinging',

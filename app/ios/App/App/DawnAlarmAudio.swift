@@ -23,6 +23,7 @@
 //
 import Foundation
 import AVFoundation
+import UserNotifications
 import Capacitor
 
 @objc(DawnAlarmAudioPlugin)
@@ -132,6 +133,11 @@ final class DawnAlarmEngine: NSObject {
     private let kFireAt        = "dawn.audio.fireAt"
     private let kSchedSound    = "dawn.audio.schedSound"
     private let kSchedMorning  = "dawn.audio.schedMorning"
+    // When kRinging was set. Without this, a ring that died abnormally (an
+    // uncaught interruption, a crash, a reinstall mid-ring) leaves kRinging
+    // true forever - app data survives a reinstall - and the NEXT launch,
+    // whenever that is, resumes a ring that may be from days ago.
+    private let kRingingSince  = "dawn.audio.ringingSince"
 
     private override init() {
         super.init()
@@ -301,9 +307,35 @@ final class DawnAlarmEngine: NSObject {
         d.set(true, forKey: kRinging)
         d.set(morning, forKey: kMorning)
         d.set(soundFile, forKey: kSound)
+        d.set(Date().timeIntervalSince1970 * 1000.0, forKey: kRingingSince)
         wasRingingAtLaunch = false
+        cancelRedundantNotifications(forMorning: morning)
         emit()
         return true
+    }
+
+    /// The remaining local-notification bursts for this morning (alarm.js
+    /// schedules up to RING_BURST of them, a minute apart) exist only so the
+    /// morning still rings if this engine never came up at all. Now that it
+    /// HAS, each of them is nothing but a collision risk: a notification's
+    /// own system-delivered sound competes with this AVAudioPlayer for the
+    /// audio hardware, which is what cuts the real alarm off a few seconds in.
+    /// Filters on the `morning` carried in the notification's extra payload
+    /// (Capacitor stores it at userInfo["cap_extra"]) rather than recomputing
+    /// notification ids natively, so this cannot drift out of sync with the id
+    /// scheme in alarm.js.
+    private func cancelRedundantNotifications(forMorning morning: String) {
+        guard !morning.isEmpty else { return }
+        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+            let ids = requests.filter { req in
+                guard let extra = req.content.userInfo["cap_extra"] as? [String: Any],
+                      let kind = extra["kind"] as? String, kind == "ring",
+                      let m = extra["morning"] as? String else { return false }
+                return m == morning
+            }.map { $0.identifier }
+            guard !ids.isEmpty else { return }
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        }
     }
 
     /// The ONLY way the alarm stops. Called from JS on a completed set or an
@@ -315,6 +347,7 @@ final class DawnAlarmEngine: NSObject {
         let d = UserDefaults.standard
         d.set(false, forKey: kRinging)
         d.removeObject(forKey: kMorning)
+        d.removeObject(forKey: kRingingSince)
         // This morning is done. JS schedules the next one after topUp().
         d.removeObject(forKey: kFireAt)
         wasRingingAtLaunch = false
@@ -329,6 +362,7 @@ final class DawnAlarmEngine: NSObject {
         let d = UserDefaults.standard
         d.set(false, forKey: kRinging)
         d.removeObject(forKey: kMorning)
+        d.removeObject(forKey: kRingingSince)
         d.removeObject(forKey: kFireAt)
         wasRingingAtLaunch = false
         deactivate()
@@ -343,8 +377,26 @@ final class DawnAlarmEngine: NSObject {
     /// Called on plugin load. Does NOT resume by itself: it only records that
     /// the process came back while an alarm was supposed to be ringing, so the
     /// JS side can check the satisfied-morning record before deciding.
+    ///
+    /// kRinging alone is not enough to trust: app data survives a reinstall,
+    /// and nothing clears it if a ring dies abnormally (an uncaught
+    /// interruption, a crash). Without a staleness check, a flag left over
+    /// from a ring hours or days ago would resurrect it on whatever launch
+    /// happens to come next - which is exactly staleMs already guards against
+    /// in tick(), just not here. Same threshold, same reasoning.
     func restoreAfterLaunch() {
-        wasRingingAtLaunch = UserDefaults.standard.bool(forKey: kRinging)
+        let d = UserDefaults.standard
+        guard d.bool(forKey: kRinging) else { wasRingingAtLaunch = false; return }
+        let since = d.double(forKey: kRingingSince)
+        let now = Date().timeIntervalSince1970 * 1000.0
+        if since > 0 && now - since < staleMs {
+            wasRingingAtLaunch = true
+        } else {
+            wasRingingAtLaunch = false
+            d.set(false, forKey: kRinging)
+            d.removeObject(forKey: kMorning)
+            d.removeObject(forKey: kRingingSince)
+        }
     }
 
     // MARK: - The three ways audio stops on its own

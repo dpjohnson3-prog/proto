@@ -8,7 +8,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        // MainViewController registers this app's own plugins (DawnAlarmAudio,
+        // DawnAlarmKit) - see MainViewController.swift for why that is
+        // necessary at all.
+        window?.rootViewController = MainViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)

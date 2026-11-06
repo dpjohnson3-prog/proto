@@ -53,6 +53,19 @@ export const IOS_PENDING_CAP = 64;
 // are about to fire are never cancelled out from under a live ring.
 export const RING_GRACE_MIN = 45;
 
+// The native engine (DawnAlarmAudio) is handed this same morning's burst-zero
+// time as its own fire time, so without a buffer the two ring at the literal
+// same instant. When that happens, the notification's own system-delivered
+// sound competes with the native AVAudioPlayer for the audio hardware and can
+// cut the real alarm off a couple of seconds in - the exact bug this buffer
+// exists to avoid. Nudging burst zero later costs nothing: the native engine
+// is still handed the true, unbuffered time (see buildNotifications below),
+// so on a healthy run it has already taken over - and cancelled this very
+// notification, see DawnAlarmEngine.fireAlarm - long before this fires. It
+// only actually rings if the native engine failed to come up at all, which is
+// exactly what it is there for.
+export const NATIVE_SYNC_BUFFER_MS = 25 * 1000;
+
 // ---------------------------------------------------------------------------
 // Sounds.
 //
@@ -167,11 +180,17 @@ export function buildNotifications(hhmm, goal, from = new Date(), satisfiedKey =
   let i = 0;
   for (const mo of mornings){
     for (const at of mo.times){
+      // Only burst zero ever coincides with the native engine's fire time
+      // (built.first, below, comes from mo.times[0]) - later bursts are
+      // already minutes apart from it. extra.at stays the true nominal time;
+      // only the OS-facing schedule is pushed back.
+      const isBurstZero = at.getTime() === mo.times[0].getTime();
+      const scheduledAt = isBurstZero ? new Date(at.getTime() + NATIVE_SYNC_BUFFER_MS) : at;
       notifications.push({
         id: RING_ID_BASE + (i++),
         title: 'Time to get up',
         body: reps + ' to turn it off.',
-        schedule: { at, allowWhileIdle: true },
+        schedule: { at: scheduledAt, allowWhileIdle: true },
         // Baked in per notification: changing the chosen sound means every one
         // of these has to be rebuilt, which arm() does.
         sound: soundFile(soundId),

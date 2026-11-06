@@ -34,6 +34,11 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Dawn Alarm uses the front camera to count your push-ups so it can turn the alarm off. The video is analysed on your phone as it arrives, is never recorded, saved, or sent anywhere, and the camera is released the moment your set ends.</string>
+	<!-- AlarmKit spike (DawnAlarmKitSpike.swift): evaluating whether an
+	     OS-owned alarm survives things the custom AVAudioSession approach
+	     cannot - the volume button silenced that one outright on 2026-11-02. -->
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Dawn Alarm schedules your wake-up alarm with the system so it rings reliably.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
