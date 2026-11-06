@@ -2,20 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Lets the alarm's notifications use interruptionLevel .timeSensitive,
-	     which breaks through most Focus modes. Self-serve: unlike Critical
-	     Alerts it needs no approval from Apple, but it DOES need this
-	     entitlement plus the matching capability on the provisioning profile.
+	<!-- Empty on purpose. AlarmKit (DawnAlarmKit.swift), the only alarm path
+	     on this app's minimum iOS version, needs no entitlement at all -
+	     checked against the actual installed SDK's bundled resources, nothing
+	     requiring one turned up anywhere. NSAlarmKitUsageDescription in
+	     Info.plist plus the runtime requestAuthorization() call is everything
+	     it needs.
 
-	     Background audio deliberately has no entry here: UIBackgroundModes in
-	     Info.plist is all it needs.
-
-	     AlarmKit (DawnAlarmKit.swift) also has no entry here - checked against
-	     the actual installed SDK's bundled resources, nothing requiring an
-	     entitlement or Signing & Capabilities toggle turned up anywhere.
-	     NSAlarmKitUsageDescription in Info.plist plus the runtime
-	     requestAuthorization() call is everything it needs. -->
-	<key>com.apple.developer.usernotifications.time-sensitive</key>
-	<true/>
+	     com.apple.developer.usernotifications.time-sensitive used to live
+	     here, for the legacy notification fallback's interruptionLevel
+	     .timeSensitive. Removed because it was added by script rather than
+	     through Xcode's own Signing & Capabilities flow, leaving no matching
+	     SystemCapabilities entry in project.pbxproj - that mismatch is what
+	     was causing "Entitlements file was modified during the build" on
+	     every few builds, as Xcode's automatic signing manager tried to
+	     reconcile the two mid-build. Removing the capability removes the
+	     mismatch at the root, rather than guessing at the exact
+	     SystemCapabilities key Xcode expects. -->
 </dict>
 </plist>

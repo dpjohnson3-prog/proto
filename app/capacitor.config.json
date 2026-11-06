@@ -5,5 +5,12 @@
   "ios": {
     "contentInset": "always",
     "backgroundColor": "#0B1026"
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "swiftToolsVersion": "6.4"
+      }
+    }
   }
 }

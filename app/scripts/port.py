@@ -104,17 +104,24 @@ edit("""    s('doneSub').textContent = mode === 'timer' ? 'Close enough. You\\u2
 """,
 "finish(): added stopCamera() + opts.onFinish(mode,count); againBtn moved to the shell")
 
-# 6. debug overlay must stay reachable inside a native shell
+# 6. debug overlay must stay reachable inside a native shell, but never in a
+# release build - gated on Vite's build-time DEV flag so it is compiled out
+# of `vite build` (what ios:build / the App Store release ships) entirely,
+# not just hidden behind a flag an end user could still discover and toggle.
 edit("""  var DEBUG = false;
   try { DEBUG = /(?:^|[?&])debug=1(?:&|$)/.test(location.search); } catch(e){}""",
 """  // PORT: a packaged app loads capacitor://localhost with no query string, so
   // the ?debug=1 route (kept verbatim, for `vite dev` in a browser) can never
   // fire on device. A persisted flag is OR-ed in; the app shell toggles it with
-  // five taps on the alarm screen heading.
+  // five taps on the alarm screen heading. import.meta.env.DEV gates all of it
+  // at build time - false in `vite build`, so this is unreachable in a release
+  // build no matter what flag or gesture someone tries.
   var DEBUG = false;
-  try { DEBUG = /(?:^|[?&])debug=1(?:&|$)/.test(location.search); } catch(e){}
-  try { if (localStorage.getItem('dawn.debug') === '1') DEBUG = true; } catch(e){}""",
-"debug overlay: ?debug=1 kept verbatim, plus a persisted flag so it is reachable on device")
+  if (import.meta.env?.DEV){
+    try { DEBUG = /(?:^|[?&])debug=1(?:&|$)/.test(location.search); } catch(e){}
+    try { if (localStorage.getItem('dawn.debug') === '1') DEBUG = true; } catch(e){}
+  }""",
+"debug overlay: ?debug=1 kept verbatim, plus a persisted flag, both gated behind import.meta.env.DEV so release builds never reach it")
 
 # 7. expose what the shell needs
 edit("""})();""",

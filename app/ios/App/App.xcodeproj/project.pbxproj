@@ -25,6 +25,7 @@
 		CAD65FA67511405B9D4E75EF /* DawnAlarmAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E02314896C64069B5420849 /* DawnAlarmAudio.swift */; };
 		945963ECE2EE49A0A16951F0 /* DawnAlarmKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C3AA261F7449F29CB9C591 /* DawnAlarmKit.swift */; };
 		A6E5570AF3484CF48D3F8CD9 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F225CC7A25842E8B105450B /* MainViewController.swift */; };
+		60D4B70EE9F94DBEB186F37C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 28BEA00DDF4447B791374AA6 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +50,7 @@
 		846ED6BDF5BF48B3A0301D06 /* App.entitlements */ = {isa = PBXFileReference; name = "App.entitlements"; path = "App.entitlements"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = text.plist.entitlements; explicitFileType = undefined; includeInIndex = 0; };
 		C0C3AA261F7449F29CB9C591 /* DawnAlarmKit.swift */ = {isa = PBXFileReference; name = "DawnAlarmKit.swift"; path = "DawnAlarmKit.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 		8F225CC7A25842E8B105450B /* MainViewController.swift */ = {isa = PBXFileReference; name = "MainViewController.swift"; path = "MainViewController.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		28BEA00DDF4447B791374AA6 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; name = "PrivacyInfo.xcprivacy"; path = "PrivacyInfo.xcprivacy"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +104,7 @@
 				846ED6BDF5BF48B3A0301D06 /* App.entitlements */,
 				C0C3AA261F7449F29CB9C591 /* DawnAlarmKit.swift */,
 				8F225CC7A25842E8B105450B /* MainViewController.swift */,
+				28BEA00DDF4447B791374AA6 /* PrivacyInfo.xcprivacy */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -183,6 +186,7 @@
 				13A89A416E3A4605B2737766 /* pulse.wav in Resources */,
 				8981F963EDFB4C08AC9E2D7D /* reveille.wav in Resources */,
 				A7A1BEF8A2AD42A0B2AEAF1A /* keepalive.wav in Resources */,
+				60D4B70EE9F94DBEB186F37C /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -272,7 +276,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -323,7 +327,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -340,7 +344,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -351,7 +355,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1";
 				DEVELOPMENT_TEAM = UMPTW639PG;
 				CODE_SIGN_ENTITLEMENTS = "App/App.entitlements";
 			};
@@ -364,7 +368,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -374,7 +378,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1";
 				DEVELOPMENT_TEAM = UMPTW639PG;
 				CODE_SIGN_ENTITLEMENTS = "App/App.entitlements";
 			};

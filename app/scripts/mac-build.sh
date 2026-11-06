@@ -34,9 +34,12 @@ LATEST=$(xcodebuild -showsdks 2>/dev/null | sed -n 's/.*-sdk iphoneos\([0-9.]*\)
 echo "latest iphoneos SDK: ${LATEST:-unknown}"
 case "${LATEST%%.*}" in
   2[6-9]|[3-9][0-9]) echo "iOS 26+ SDK present." ;;
-  *) echo "NOTE: iOS 26 SDK not found. Dawn does NOT need it (AlarmKit is unused -"
-     echo "      its system alert always carries a Stop button, which defeats the"
-     echo "      rep requirement). Deployment target is iOS 15.0." ;;
+  *) echo "WARNING: iOS 26 SDK not found, but Dawn needs it. The alarm now runs"
+     echo "         on AlarmKit (DawnAlarmKit.swift) - it is the only reliable"
+     echo "         path; the old notification engine is a fallback for an iOS"
+     echo "         version gap that the deployment target (26.1) does not"
+     echo "         actually allow installing on anymore. This build will likely"
+     echo "         fail without a newer Xcode." ;;
 esac
 
 line "web layer"

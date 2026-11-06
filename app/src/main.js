@@ -237,10 +237,10 @@ function renderArmedThrough(){
 function renderDebugState(){
   const el = $('debugState');
   if (!el) return;
-  // Temporarily unconditional (normally gated on dawn.debug) while actively
-  // chasing the AlarmKit re-ring issue - the 5-tap gesture to reach it proved
-  // too unreliable to use as a debugging tool. Re-gate once that is settled.
-  if (!isNative){ el.textContent = ''; return; }
+  // import.meta.env?.DEV is Vite's build-time flag: false in `vite build`
+  // (what ships to the App Store), so this is compiled out of release builds
+  // entirely - no flag or gesture can surface it there.
+  if (!import.meta.env?.DEV || !isNative){ el.textContent = ''; return; }
   (async () => {
     try {
       const pending = await LocalNotifications.getPending();
@@ -512,20 +512,25 @@ $('againBtn').onclick = () => { showAlarmScreen(); };
 // The ?debug=1 overlay has no way in on a packaged app (no query string), so
 // five taps on the heading toggles the persisted flag instead. Deliberately
 // undiscoverable rather than a visible switch on a 6am alarm screen.
-let taps = 0, tapT = 0;
-$('sAlarm').querySelector('h1').onclick = () => {
-  const now = Date.now();
-  taps = (now - tapT < 600) ? taps + 1 : 1;
-  tapT = now;
-  if (taps < 5) return;
-  taps = 0;
-  let on = false;
-  try {
-    on = localStorage.getItem('dawn.debug') === '1';
-    localStorage.setItem('dawn.debug', on ? '0' : '1');
-  } catch (e){ return; }
-  location.reload();
-};
+// Not wired at all in a release build (see import.meta.env?.DEV above) - the
+// flag it toggles is ignored there anyway, but there is no reason to leave
+// dead debug chrome reachable in the shipped app.
+if (import.meta.env?.DEV){
+  let taps = 0, tapT = 0;
+  $('sAlarm').querySelector('h1').onclick = () => {
+    const now = Date.now();
+    taps = (now - tapT < 600) ? taps + 1 : 1;
+    tapT = now;
+    if (taps < 5) return;
+    taps = 0;
+    let on = false;
+    try {
+      on = localStorage.getItem('dawn.debug') === '1';
+      localStorage.setItem('dawn.debug', on ? '0' : '1');
+    } catch (e){ return; }
+    location.reload();
+  };
+}
 }
 
 // ---------------------------------------------------------------------------

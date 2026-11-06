@@ -461,9 +461,17 @@ check('every method the JS bridge calls exists in the plugin',
 
 console.log('\n-- signing and entitlements --');
 const ent = fs.readFileSync(path.join(ROOT, 'ios/App/App/App.entitlements'), 'utf8');
-check('Time Sensitive Notifications entitlement is present',
-  /com\.apple\.developer\.usernotifications\.time-sensitive/.test(ent));
-check('...and set to true', /time-sensitive<\/key>\s*<true\/>/.test(ent));
+// Deliberately empty: AlarmKit (the only alarm path on this app's deployment
+// target) needs no entitlement. time-sensitive used to live here for the
+// legacy notification fallback, but an unregistered capability (added by
+// script, with no matching SystemCapabilities entry in project.pbxproj) was
+// causing "Entitlements file was modified during the build" - removing it
+// removed the mismatch at the root instead of guessing at Xcode's expected
+// SystemCapabilities key.
+check('the entitlements file is still valid plist, deliberately empty of capabilities',
+  /<dict>\s*<\/dict>/.test(ent) || !/<key>/.test(ent));
+check('time-sensitive is NOT a declared key (removed - AlarmKit needs no entitlement)',
+  !/<key>com\.apple\.developer\.usernotifications\.time-sensitive<\/key>/.test(ent));
 const pbx = fs.readFileSync(path.join(ROOT, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8');
 check('a development team is set', /DEVELOPMENT_TEAM = \w+;/.test(pbx),
   (pbx.match(/DEVELOPMENT_TEAM = (\w+);/) || [])[1] || '');

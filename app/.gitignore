@@ -3,6 +3,7 @@ dist/
 ios/App/App/public/
 ios/App/build/
 ios/DerivedData/
+.build/
 .DS_Store
 *.log
 

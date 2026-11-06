@@ -12,21 +12,21 @@
         <scene sceneID="EHf-IW-A2E">
             <objects>
                 <viewController id="01J-lp-oVM" sceneMemberID="viewController">
-                    <imageView key="view" userInteractionEnabled="NO" contentMode="scaleAspectFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="Splash" id="snD-IY-ifK">
+                    <!-- Solid dark fill, no image: the stock Capacitor "Splash"
+                         asset was never replaced with Dawn's own art and is
+                         mostly white, which is what was causing the launch
+                         flash. Matches capacitor.config.json's ios.backgroundColor
+                         and the webview's dark background exactly, with no new
+                         artwork needed. -->
+                    <view key="view" userInteractionEnabled="NO" horizontalHuggingPriority="251" verticalHuggingPriority="251" id="snD-IY-ifK">
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                         <autoresizingMask key="autoresizingMask"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                    </imageView>
+                        <color key="backgroundColor" red="0.043137254902" green="0.062745098039" blue="0.149019607843" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                    </view>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
             <point key="canvasLocation" x="53" y="375"/>
         </scene>
     </scenes>
-    <resources>
-        <image name="Splash" width="1366" height="1366"/>
-        <systemColor name="systemBackgroundColor">
-            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-        </systemColor>
-    </resources>
 </document>
