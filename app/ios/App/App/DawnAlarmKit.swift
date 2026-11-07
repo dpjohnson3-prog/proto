@@ -95,15 +95,11 @@ struct DawnOpenPushupsIntent: AppIntent, LiveActivityIntent {
 /// Stop is never treated as "done." completeMission() is the only thing that
 /// cancels the follow-up.
 ///
-/// openAppWhenRun is deliberately false, even though that costs the "swipe
-/// instantly opens to push-ups" convenience: a real-device test with it true
-/// showed this intent's execution is coupled to the app-launch succeeding,
-/// and while the phone is locked that launch is unreliable - identical taps
-/// produced "ran, scheduled fine" once and "never ran at all" the next time.
-/// The one thing that cannot be allowed to be a coin flip is the re-ring, so
-/// it no longer depends on the app actually coming to the foreground. The
-/// kWantsPushups/kMorning flags are still set below; they are picked up the
-/// next time the app opens by any means, same mechanism as before.
+/// openAppWhenRun is true - see the file header's TAP THE BUTTON note for why
+/// (an earlier version set this false chasing what looked like a reliability
+/// race; the real variable was tap-vs-swipe, not this coupling). The
+/// kWantsPushups/kMorning flags are still set below so they are picked up the
+/// next time the app opens by any means, same as before.
 @available(iOS 26.1, *)
 struct DawnAlarmStopIntent: AppIntent, LiveActivityIntent {
     static var title: LocalizedStringResource = "Stop"
@@ -237,6 +233,7 @@ enum DawnAlarmKitEngine {
     static func scheduleFollowUp(after seconds: TimeInterval = kFollowUpSeconds) async throws -> Alarm {
         let d = UserDefaults.standard
         if let old = d.string(forKey: kFollowUpId), let oldUUID = UUID(uuidString: old) {
+            stopIfAlerting(id: oldUUID)
             _ = try? AlarmManager.shared.cancel(id: oldUUID)
         }
         let id = UUID()
@@ -251,8 +248,22 @@ enum DawnAlarmKitEngine {
     static func cancelFollowUpIfAny() {
         let d = UserDefaults.standard
         guard let s = d.string(forKey: kFollowUpId), let uuid = UUID(uuidString: s) else { return }
+        stopIfAlerting(id: uuid)
         _ = try? AlarmManager.shared.cancel(id: uuid)
         d.removeObject(forKey: kFollowUpId)
+    }
+
+    /// cancel(id:) and stop(id:) are different AlarmKit operations - ground-
+    /// truthed in AlarmKit.swiftinterface, not guessed: cancel() removes a
+    /// scheduled alarm, stop() ends one that is actively alerting right now.
+    /// A real-device test proved cancel() ALONE does not silence a ringing
+    /// alarm - swiping the alert, or tapping Disarm in the app while it was
+    /// ringing, left the sound going. Call this before cancel(id:) wherever
+    /// an alarm is being retired, so an in-progress alert is actually
+    /// silenced rather than just unscheduled. Failing here (because the
+    /// alarm was not actually alerting) is expected and ignored.
+    static func stopIfAlerting(id: UUID) {
+        try? AlarmManager.shared.stop(id: id)
     }
 }
 
@@ -319,6 +330,7 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
                 let old = DawnAlarmKitEngine.uuid(forCallerId: callerId)
                 DawnAlarmKitEngine.remember(callerId: callerId, uuid: uuid)
                 if let old, old != uuid {
+                    DawnAlarmKitEngine.stopIfAlerting(id: old)
                     _ = try? AlarmManager.shared.cancel(id: old)
                 }
 
@@ -339,8 +351,16 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve(["ok": true]); return
         }
         do {
+            // stop() first: this is the Disarm button's only path to actually
+            // silence an alarm that is ringing right now, not just one that is
+            // merely scheduled. See stopIfAlerting's comment for why cancel()
+            // alone is not enough. Also clear any pending follow-up (in case
+            // Stop was tapped earlier and this is a full disarm before the
+            // follow-up fired) so Disarm truly means nothing rings again.
+            DawnAlarmKitEngine.stopIfAlerting(id: uuid)
             try AlarmManager.shared.cancel(id: uuid)
             DawnAlarmKitEngine.forget(callerId: callerId)
+            DawnAlarmKitEngine.cancelFollowUpIfAny()
             call.resolve(["ok": true])
         } catch {
             call.reject("cancelAlarm failed: \(error)")
