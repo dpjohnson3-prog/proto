@@ -300,12 +300,11 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
         let soundFile = call.getString("sound")
         Task {
             do {
-                // Replace any existing alarm under this id rather than
-                // stacking a second one toward the system's alarm limit.
-                if let old = DawnAlarmKitEngine.uuid(forCallerId: callerId) {
-                    _ = try? AlarmManager.shared.cancel(id: old)
-                    DawnAlarmKitEngine.forget(callerId: callerId)
-                }
+                // Schedule the NEW alarm FIRST. Only once that has actually
+                // succeeded do we cancel whatever was there before - so a
+                // failure here (network hiccup talking to the system daemon,
+                // whatever) never leaves a gap with no alarm at all between
+                // cancelling the old one and the new one landing.
                 let weekdays = repeatDays.compactMap { DawnAlarmKitEngine.weekday(fromJSDay: $0) }
                 let time = Alarm.Schedule.Relative.Time(hour: hour, minute: minute)
                 let schedule = Alarm.Schedule.relative(.init(
@@ -314,7 +313,15 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
                 let uuid = UUID()
                 let config = DawnAlarmKitEngine.makeConfig(label: label, schedule: schedule, soundFile: soundFile)
                 let alarm = try await AlarmManager.shared.schedule(id: uuid, configuration: config)
+
+                // Only now, with the replacement confirmed live, retire the
+                // old one under this id (if any).
+                let old = DawnAlarmKitEngine.uuid(forCallerId: callerId)
                 DawnAlarmKitEngine.remember(callerId: callerId, uuid: uuid)
+                if let old, old != uuid {
+                    _ = try? AlarmManager.shared.cancel(id: old)
+                }
+
                 if let soundFile { UserDefaults.standard.set(soundFile, forKey: kAlarmSound) }
                 call.resolve(["id": callerId, "state": "\(alarm.state)"])
             } catch {

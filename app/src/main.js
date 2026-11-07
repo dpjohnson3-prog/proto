@@ -25,6 +25,73 @@ function alarmKitLabel(goal){
   return goal + (goal === 1 ? ' push-up' : ' push-ups') + ' to turn it off - tap, don’t swipe';
 }
 
+// The one scheduleAlarm() call, built from current settings - used by the Arm
+// button, by a settings change while armed, and by the auto-recovery path
+// that notices the system alarm went missing. One place to build it means
+// those three can never quietly drift apart.
+async function scheduleAlarmKitNow(){
+  const [hour, minute] = settings.time.split(':').map(Number);
+  return alarmKit.scheduleAlarm({
+    id: ALARMKIT_ID, hour, minute, repeatDays: [0,1,2,3,4,5,6],
+    label: alarmKitLabel(settings.goal),
+    sound: alarm.soundFile(settings.sound)
+  });
+}
+
+// Next occurrence of hour:minute from now - today if it has not passed yet,
+// tomorrow if it has. Used to show the REAL next ring time, read from the
+// system alarm, rather than recomputed from saved settings that could have
+// drifted from what is actually scheduled.
+function nextOccurrence(hour, minute){
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  if (d <= new Date()) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+// The one thing that can make "armed" a lie: the system alarm itself goes
+// missing (an OS quirk, anything) while settings still say armed. Checked on
+// every launch and every foreground return - on its own, it tries to fix
+// this immediately and silently; the user only sees anything if that retry
+// also fails. Returns the system alarm's {hour, minute} if one exists
+// (freshly rescheduled or not), or null if none could be made to exist.
+async function ensureAlarmKitArmed(){
+  if (!settings.armed || settings.alarmBackend !== 'alarmkit') return null;
+  const find = (list) => (list.alarms || []).find(a => a.id === ALARMKIT_ID) || null;
+  let mine = null;
+  try { mine = find(await alarmKit.listAlarms()); } catch (e){}
+  if (mine){
+    $('missingAlarmWarn').classList.add('hide');
+    return mine;
+  }
+  try {
+    await scheduleAlarmKitNow();
+    $('missingAlarmWarn').classList.add('hide');
+    return find(await alarmKit.listAlarms());
+  } catch (e){
+    $('missingAlarmWarn').classList.remove('hide');
+    $('missingAlarmText').textContent = 'The alarm went missing from the system and could not be ' +
+      'rescheduled automatically (' + e + '). Tap Re-arm, or check Settings → Dawn Alarm.';
+    return null;
+  }
+}
+
+// Closes the swipe-bypass gap: swiping the alert dismisses it as a system
+// gesture that never reaches DawnAlarmStopIntent, so no flag ever records
+// that the mission is unfinished. Deriving "owed" from the alarm's own
+// scheduled time instead means opening the app any time after that time, by
+// any means, still routes to push-ups - not just when Stop was tapped.
+async function checkOwedByTime(mine){
+  if (!mine || counter.isRunning()) return false;
+  const now = new Date();
+  const scheduled = new Date(now); scheduled.setHours(mine.hour, mine.minute, 0, 0);
+  if (now < scheduled) return false;
+  const todayKey = alarm.dayKey(now);
+  if ((await alarm.satisfiedKey()) === todayKey) return false;
+  await enterRing({ real: true, morning: todayKey });
+  return true;
+}
+
 let settings = { time: '06:30', goal: 10, armed: false, alarmBackend: 'legacy' };
 let counter = null;
 
@@ -214,9 +281,27 @@ function renderArmedThrough(){
     return;
   }
   if (settings.alarmBackend === 'alarmkit'){
-    // A recurring AlarmKit alarm has no window to run out - it rings every
-    // day until disarmed, the one thing the legacy path could never promise.
-    el.textContent = 'Rings every day at this time until you disarm it.';
+    // Read from the system alarm itself, not recomputed from saved settings -
+    // those can say "armed" while the actual alarm is gone. Fire-and-forget,
+    // same pattern as renderDebugState(): renderArmedThrough() is not async.
+    el.textContent = 'Checking the system alarm…';
+    (async () => {
+      let mine = null;
+      try { mine = ((await alarmKit.listAlarms()).alarms || []).find(a => a.id === ALARMKIT_ID) || null; }
+      catch (e){}
+      if (mine){
+        const next = nextOccurrence(mine.hour, mine.minute);
+        el.textContent = 'Next ring: ' + next.toLocaleString([], {
+          weekday: 'short', hour: 'numeric', minute: '2-digit'
+        }) + '. Rings every day at this time until you disarm it.';
+        $('missingAlarmWarn').classList.add('hide');
+      } else {
+        el.textContent = '';
+        $('missingAlarmWarn').classList.remove('hide');
+        $('missingAlarmText').textContent = 'No alarm exists in the system right now, even though ' +
+          'this screen said armed. Tap Re-arm below.';
+      }
+    })();
     return;
   }
   const built = alarm.buildNotifications(settings.time, settings.goal, new Date(), null, settings.sound);
@@ -267,6 +352,7 @@ function renderArmState(){
     $('ringerNote').textContent = '';
     $('quitNote').textContent = '';
     $('audioWarn').classList.add('hide');
+    $('missingAlarmWarn').classList.add('hide');
     return;
   }
   const [h, m] = settings.time.split(':').map(Number);
@@ -277,10 +363,13 @@ function renderArmState(){
   el.classList.add('armed');
   renderArmedThrough();
   if (settings.alarmBackend === 'alarmkit'){
-    // Neither advisory applies: AlarmKit rings on the media channel
-    // regardless of the silent switch (no notification fallback to warn
-    // about), and the alarm is owned by the system, not this process - a
-    // force-quit cannot take it down the way it could the legacy engine.
+    // The ringer-silent-switch advisory does not apply (no notification
+    // fallback to warn about - AlarmKit owns delivery entirely). Force-quit
+    // is NOT asserted safe here: a real overnight failure happened after the
+    // app was force-quit, and a quick direct retest rang fine, so the
+    // evidence is genuinely mixed rather than reassuring. ensureAlarmKitArmed()
+    // and the missing-alarm warning below are the actual mitigation - they
+    // catch the symptom (the alarm is gone) regardless of the cause.
     $('ringerNote').textContent = '';
     $('quitNote').textContent = '';
     $('audioWarn').classList.add('hide');
@@ -370,13 +459,17 @@ async function persistAndMaybeReschedule(){
   // would still ring at the old time with the old number.
   if (!settings.armed || !isNative) return;
   if (settings.alarmBackend === 'alarmkit'){
-    const [hour, minute] = settings.time.split(':').map(Number);
-    const label = alarmKitLabel(settings.goal);
     // scheduleAlarm replaces whatever is under this id rather than stacking.
-    await alarmKit.scheduleAlarm({
-      id: ALARMKIT_ID, hour, minute, repeatDays: [0,1,2,3,4,5,6], label,
-      sound: alarm.soundFile(settings.sound)
-    });
+    // A failure here must not be swallowed - it would otherwise look armed
+    // with the old time/goal/sound while actually unchanged or (worse)
+    // half-updated.
+    try {
+      await scheduleAlarmKitNow();
+      $('missingAlarmWarn').classList.add('hide');
+    } catch (e){
+      $('missingAlarmWarn').classList.remove('hide');
+      $('missingAlarmText').textContent = 'Could not update the alarm (' + e + '). Tap Re-arm to try again.';
+    }
   } else {
     await alarm.arm(settings.time, settings.goal, settings.sound);
   }
@@ -412,78 +505,59 @@ $('armBtn').onclick = async () => {
     return;
   }
 
-  // AlarmKit first, on every arm - not just once at app launch - since
-  // authorization can change in Settings between arms. Only a genuine
-  // 'unavailable' (iOS < 26.1) or 'denied' falls back to the legacy path.
+  // AlarmKit is the only alarm path now (minimum iOS is 26.1, so it is always
+  // available) - requested fresh on every arm, not just once at launch,
+  // since authorization can change in Settings between arms. There is no
+  // silent fallback: either this succeeds and is armed, or it plainly does
+  // not and is NOT armed. An alarm that looks armed but is not is exactly
+  // the failure this app exists to prevent.
   const akStatus = (await alarmKit.requestAuthorization()).status;
-  if (akStatus === 'authorized'){
-    const [hour, minute] = settings.time.split(':').map(Number);
-    const label = alarmKitLabel(settings.goal);
-    try {
-      await alarmKit.scheduleAlarm({
-        id: ALARMKIT_ID, hour, minute, repeatDays: [0,1,2,3,4,5,6], label,
-        sound: alarm.soundFile(settings.sound)
-      });
-      settings.armed = true;
-      settings.alarmBackend = 'alarmkit';
-      await saveSettings(settings);
-      renderArmState();
-      perm.classList.remove('hide');
-      perm.textContent = 'Armed with AlarmKit: the system owns this alarm the same way it owns ' +
-        'Clock app alarms. Tap the button when it rings - swiping the alert away dismisses it ' +
-        'without opening the app, same as before.';
-      $('armBtn').textContent = 'Disarm';
-      return;
-    } catch (e){
-      console.warn('AlarmKit scheduling failed, falling back:', e);
-      // fall through to the legacy path below
-    }
-  }
-
-  // Legacy path: iOS < 26.1, AlarmKit authorization denied, or scheduling
-  // failed outright. Permission is requested here - at the moment the person
-  // asks for an alarm, when the reason is obvious - rather than at launch.
-  let status = await alarm.checkPermission();
-  if (status !== 'granted') status = await alarm.requestPermission();
-
-  if (status !== 'granted'){
+  if (akStatus !== 'authorized'){
     settings.armed = false;
     await saveSettings(settings);
     warn.classList.remove('hide');
-    warn.textContent = status === 'denied'
-      ? 'Notifications are off for this app, so it cannot wake you. Turn them on in ' +
-        'iOS Settings → Notifications → Dawn Alarm, then arm it again. ' +
-        'You can still use "Try it now" while the app is open.'
-      : 'Notification permission was not granted, so the alarm cannot ring.';
+    warn.textContent = (akStatus === 'denied'
+      ? 'Alarm permission is off for this app, so it cannot wake you. Turn it on in '
+      : 'Alarm permission was not granted, so the alarm cannot be armed. Turn it on in ') +
+      'iOS Settings → Dawn Alarm → Alarms, then arm it again. ' +
+      'You can still use "Try it now" while the app is open.';
     renderArmState();
     return;
   }
 
-  const built = await alarm.arm(settings.time, settings.goal, settings.sound);
-  const first = built && built.first;
-  // Hold the audio session open from now until the alarm fires, and hand the
-  // fire time to the native side so the ring does not depend on JS running.
-  const audioState = await alarmAudio.startKeepalive();
-  if (built && built.first && built.mornings && built.mornings.length){
-    await alarmAudio.scheduleAlarm(built.first.getTime(),
-                                   alarm.soundFile(settings.sound),
-                                   built.mornings[0].key);
+  try {
+    await scheduleAlarmKitNow();
+  } catch (e){
+    settings.armed = false;
+    await saveSettings(settings);
+    warn.classList.remove('hide');
+    warn.textContent = 'Scheduling failed (' + e + '). The alarm is NOT armed - ' +
+      'try again, or check Settings → Dawn Alarm → Alarms.';
+    renderArmState();
+    return;
   }
-  // If the session did not actually come up, the continuous alarm is not going
-  // to happen and the user must be told now, not at 06:31.
-  lastAudioState = audioState;
+
   settings.armed = true;
-  settings.alarmBackend = 'legacy';
+  settings.alarmBackend = 'alarmkit';
   await saveSettings(settings);
   renderArmState();
-  if (first){
-    perm.classList.remove('hide');
-    perm.textContent = 'Next ring: ' + first.toLocaleString([], {
-      weekday: 'short', hour: 'numeric', minute: '2-digit'
-    }) + '. iOS caps a notification sound at 30 seconds, so it rings ' +
-      alarm.RING_BURST + ' times a minute apart rather than continuously.';
-  }
+  perm.classList.remove('hide');
+  perm.textContent = 'Armed with AlarmKit: the system owns this alarm the same way it owns ' +
+    'Clock app alarms. Tap the button when it rings - swiping the alert away dismisses it ' +
+    'without opening the app, same as before.';
   $('armBtn').textContent = 'Disarm';
+};
+
+$('rearmBtn').onclick = async () => {
+  $('rearmBtn').disabled = true;
+  try {
+    await scheduleAlarmKitNow();
+    $('missingAlarmWarn').classList.add('hide');
+  } catch (e){
+    $('missingAlarmText').textContent = 'Re-arm failed (' + e + '). Check Settings → Dawn Alarm → Alarms.';
+  }
+  $('rearmBtn').disabled = false;
+  renderArmState();
 };
 
 $('soundPreview').onclick = () => {
@@ -557,9 +631,14 @@ async function boot(){
       activeRing = null;
       if (!isNative || !ring || !ring.real) return;
       if (settings.alarmBackend === 'alarmkit'){
-        // The recurring alarm needs no bookkeeping - cancel just the short
-        // follow-up Stop may have armed. Tomorrow's occurrence is untouched.
+        // markSatisfied records today as done - checkOwedByTime() needs this
+        // so reopening the app later today does not re-route to push-ups
+        // after they are actually finished. completeMission() cancels just
+        // the short follow-up Stop may have armed; tomorrow's occurrence on
+        // the recurring alarm itself is untouched.
+        await alarm.markSatisfied(ring.morning);
         await alarmKit.completeMission();
+        renderArmState();
         return;
       }
       await alarm.markSatisfied(ring.morning);
@@ -590,10 +669,14 @@ async function boot(){
       if (settings.alarmBackend === 'alarmkit'){
         // Tapping the system alert's one button is what brings the app
         // forward in the first place - this is the first chance JS gets to
-        // act on it.
+        // act on it. ensureAlarmKitArmed() first: every foreground return is
+        // a chance to notice and fix a missing alarm before it matters again.
+        const mine = await ensureAlarmKitArmed();
         const intent = await alarmKit.consumePushupIntent();
         if (intent.wants && !counter.isRunning()){
           await enterRing({ real: true, morning: intent.morning || alarm.dayKey(new Date()) });
+        } else {
+          await checkOwedByTime(mine);
         }
         renderArmState();
         return;
@@ -622,13 +705,19 @@ async function boot(){
   // now, then immediately restart it.
   let resumed = false;
   if (settings.alarmBackend === 'alarmkit'){
-    // A cold launch here means the system alert's button is what launched
+    // A cold launch here usually means the system alert's button launched
     // the app - there is no "ringing right now" native state to query first,
     // AlarmKit owns that entirely; just consume the signal it left behind.
+    // ensureAlarmKitArmed() first: a cold launch (reinstall, force-quit
+    // recovery, just opening the app) is exactly when a missing alarm should
+    // be noticed and fixed, not left silently broken until the next morning.
+    const mine = await ensureAlarmKitArmed();
     const intent = await alarmKit.consumePushupIntent();
     if (intent.wants){
       await enterRing({ real: true, morning: intent.morning || alarm.dayKey(new Date()) });
       resumed = counter.show && activeRing !== null;
+    } else {
+      resumed = await checkOwedByTime(mine);
     }
   } else if (alarmAudio.isNativeAudio){
     const st = await alarmAudio.getState();

@@ -203,10 +203,13 @@ check('the real-alarm escape hatch is still on the ring screen too',
 // trust the comment, assert it structurally: satisfaction happens in exactly
 // one place, and the back handler is not it.
 const main = fs.readFileSync(path.join(ROOT, 'src/main.js'), 'utf8');
-check('markSatisfied is called from exactly one place',
-  (main.match(/alarm\.markSatisfied\(/g) || []).length === 1);
+// One call per backend branch (alarmkit and legacy) - both still inside
+// onFinish, never anywhere else.
+check('markSatisfied is called from exactly two places',
+  (main.match(/alarm\.markSatisfied\(/g) || []).length === 2);
 const onFinishBlock = main.slice(main.indexOf('onFinish: async'), main.indexOf('wireUI();'));
-check('...and that place is onFinish', onFinishBlock.includes('alarm.markSatisfied('));
+check('...and both are inside onFinish',
+  (onFinishBlock.match(/alarm\.markSatisfied\(/g) || []).length === 2);
 const backBlock = main.slice(main.indexOf("$('ringBack').onclick"),
   main.indexOf("$('againBtn').onclick"));
 for (const forbidden of ['markSatisfied', 'saveSatisfied', 'alarm.disarm', 'alarm.arm(', 'LocalNotifications']){
@@ -413,8 +416,14 @@ check('it says what still works', /notifications/i.test(A.AUDIO_FAILED_ADVISORY)
 check('the armed screen has a slot for it', idx.includes('id="audioWarn"'));
 check('health is judged on session + timer + schedule together',
   /st\.keepalive && st\.monitoring && st\.scheduledAt > 0/.test(main));
-check('arm records what the plugin actually reported',
-  /lastAudioState = audioState/.test(main));
+// The legacy backend has no arm-time health recording any more - arming is
+// AlarmKit-only now (see below). Health state is instead always assigned
+// straight from the plugin's own response, never fabricated, at every point
+// it is checked: foreground return, cold boot, and the died-with-the-process
+// rebuild path.
+check('audio health state always reflects what the plugin actually reported',
+  /lastAudioState = st;/.test(main) &&
+  /lastAudioState = await alarmAudio\.startKeepalive\(\)/.test(main));
 check('the warning names which part failed',
   /audio session not running/.test(main) && /no fire time scheduled/.test(main));
 
