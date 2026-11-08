@@ -243,6 +243,17 @@ check('and cleared when disarmed', /\$\('ringerNote'\)\.textContent = ''/.test(m
 const armBlock = main.slice(main.indexOf("$('armBtn').onclick"), main.indexOf("$('testBtn').onclick"));
 check('the advisory never blocks arming', !armBlock.includes('RINGER_ADVISORY'));
 
+// Disarm must not become a bypass for push-ups: a ringing or owed morning
+// has to be refused here, not just caught upstream.
+check('Disarm refuses to run while a real ring is active',
+  /if \(activeRing && activeRing\.real\) return;/.test(armBlock));
+check('Disarm also checks the alarm\'s own owed-by-time status before cancelling',
+  /checkOwedByTime\(await findMyAlarmKitAlarm\(\)\)/.test(armBlock));
+const activeRingGuardIdx = armBlock.indexOf('activeRing.real');
+const cancelCallIdx = armBlock.indexOf('alarmKit.cancelAlarm(ALARMKIT_ID)');
+check('...and both guards run before the alarm is actually cancelled',
+  activeRingGuardIdx > -1 && cancelCallIdx > -1 && activeRingGuardIdx < cancelCallIdx);
+
 console.log('\n== alarm sounds ==');
 check('there are 4-6 options', SOUNDS.length >= 4 && SOUNDS.length <= 6, `${SOUNDS.length}`);
 check('ids are unique', new Set(SOUNDS.map(s => s.id)).size === SOUNDS.length);

@@ -55,11 +55,14 @@ function nextOccurrence(hour, minute){
 // this immediately and silently; the user only sees anything if that retry
 // also fails. Returns the system alarm's {hour, minute} if one exists
 // (freshly rescheduled or not), or null if none could be made to exist.
+async function findMyAlarmKitAlarm(){
+  try { return ((await alarmKit.listAlarms()).alarms || []).find(a => a.id === ALARMKIT_ID) || null; }
+  catch (e){ return null; }
+}
+
 async function ensureAlarmKitArmed(){
   if (!settings.armed || settings.alarmBackend !== 'alarmkit') return null;
-  const find = (list) => (list.alarms || []).find(a => a.id === ALARMKIT_ID) || null;
-  let mine = null;
-  try { mine = find(await alarmKit.listAlarms()); } catch (e){}
+  let mine = await findMyAlarmKitAlarm();
   if (mine){
     $('missingAlarmWarn').classList.add('hide');
     return mine;
@@ -67,7 +70,7 @@ async function ensureAlarmKitArmed(){
   try {
     await scheduleAlarmKitNow();
     $('missingAlarmWarn').classList.add('hide');
-    return find(await alarmKit.listAlarms());
+    return await findMyAlarmKitAlarm();
   } catch (e){
     $('missingAlarmWarn').classList.remove('hide');
     $('missingAlarmText').textContent = 'The alarm went missing from the system and could not be ' +
@@ -286,9 +289,7 @@ function renderArmedThrough(){
     // same pattern as renderDebugState(): renderArmedThrough() is not async.
     el.textContent = 'Checking the system alarm…';
     (async () => {
-      let mine = null;
-      try { mine = ((await alarmKit.listAlarms()).alarms || []).find(a => a.id === ALARMKIT_ID) || null; }
-      catch (e){}
+      const mine = await findMyAlarmKitAlarm();
       if (mine){
         const next = nextOccurrence(mine.hour, mine.minute);
         el.textContent = 'Next ring: ' + next.toLocaleString([], {
@@ -481,6 +482,16 @@ $('armBtn').onclick = async () => {
   warn.classList.add('hide'); perm.classList.add('hide');
 
   if (settings.armed){
+    // A ringing or owed morning must be pushed through the ring screen, not
+    // silently turned off here. Checked again right at this exact point -
+    // not just upstream in the foreground/cold-boot paths that normally
+    // catch it - so Disarm cannot become a bypass no matter how this screen
+    // was reached.
+    if (activeRing && activeRing.real) return;
+    if (settings.alarmBackend === 'alarmkit' &&
+        await checkOwedByTime(await findMyAlarmKitAlarm())){
+      return;
+    }
     if (settings.alarmBackend === 'alarmkit'){
       await alarmKit.cancelAlarm(ALARMKIT_ID);
     } else {
@@ -543,8 +554,8 @@ $('armBtn').onclick = async () => {
   renderArmState();
   perm.classList.remove('hide');
   perm.textContent = 'Armed with AlarmKit: the system owns this alarm the same way it owns ' +
-    'Clock app alarms. Tap the button when it rings - swiping the alert away dismisses it ' +
-    'without opening the app, same as before.';
+    'Clock app alarms. Tap the button when it rings - swiping the alert away does not turn ' +
+    'it off, it will just ring again.';
   $('armBtn').textContent = 'Disarm';
 };
 
