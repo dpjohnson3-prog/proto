@@ -16,6 +16,22 @@ const isNative = Capacitor.isNativePlatform();
 // architecturally simpler than the legacy rolling-notification window.
 const ALARMKIT_ID = 'dawn-daily';
 
+// JS weekday convention throughout this file matches Date.getDay(): 0=Sunday.
+const DAY_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DAY_LONG  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Describes a repeatDays array the way a person would say it out loud -
+// "every day", "once", or the specific days - used on both the setup screen
+// (from settings) and the armed screen (from the live system alarm, which
+// may have been picked up by a day never explicitly chosen if it drifted -
+// callers pass whichever is the relevant truth for that moment).
+function describeRepeat(days){
+  if (!days || days.length === 0) return 'Rings once, then turns itself off.';
+  if (days.length === 7) return 'Rings every day.';
+  const sorted = [...days].sort((a, b) => a - b);
+  return 'Rings ' + sorted.map(d => DAY_LONG[d]).join(', ') + '.';
+}
+
 // On-device testing found that swiping the full-screen alert away dismisses
 // it as a system-level gesture that never reaches DawnAlarmStopIntent at all -
 // no re-ring gets scheduled, silently defeating the whole point. Tapping the
@@ -32,10 +48,24 @@ function alarmKitLabel(goal){
 async function scheduleAlarmKitNow(){
   const [hour, minute] = settings.time.split(':').map(Number);
   return alarmKit.scheduleAlarm({
-    id: ALARMKIT_ID, hour, minute, repeatDays: [0,1,2,3,4,5,6],
+    id: ALARMKIT_ID, hour, minute, repeatDays: settings.repeatDays,
     label: alarmKitLabel(settings.goal),
     sound: alarm.soundFile(settings.sound)
   });
+}
+
+// Whether the live system alarm's own schedule still matches what we last
+// told it to be. A mismatch (not just a missing alarm) is exactly the shape
+// of bug that leaves the app showing one thing while AlarmKit does another -
+// e.g. the app thinks a one-time alarm is used up and disarmed, but the
+// system alarm it forgot to cancel is still sitting there as a repeater.
+function alarmMatchesSettings(mine){
+  if (!mine) return false;
+  const [hour, minute] = settings.time.split(':').map(Number);
+  if (mine.hour !== hour || mine.minute !== minute) return false;
+  const a = [...(mine.repeatDays || [])].sort();
+  const b = [...settings.repeatDays].sort();
+  return a.length === b.length && a.every((d, i) => d === b[i]);
 }
 
 // Next occurrence of hour:minute from now - today if it has not passed yet,
@@ -60,13 +90,41 @@ async function findMyAlarmKitAlarm(){
   catch (e){ return null; }
 }
 
+// Under the AlarmKit backend, the legacy notification scheduler is never
+// used to deliver anything - zero pending notifications should exist. Any
+// that do are stale leftovers (an upgrade from a pre-AlarmKit install, or a
+// bug) that don't match any currently saved, enabled alarm by definition,
+// so they are simply all cancelled rather than matched one by one.
+async function sweepStaleLegacyNotifications(){
+  if (settings.alarmBackend !== 'alarmkit') return;
+  try {
+    const pending = await LocalNotifications.getPending();
+    const ids = (pending.notifications || []).map(n => ({ id: n.id }));
+    if (ids.length) await LocalNotifications.cancel({ notifications: ids });
+  } catch (e){}
+}
+
 async function ensureAlarmKitArmed(){
-  if (!settings.armed || settings.alarmBackend !== 'alarmkit') return null;
-  let mine = await findMyAlarmKitAlarm();
-  if (mine){
+  if (settings.alarmBackend !== 'alarmkit') return null;
+  const mine = await findMyAlarmKitAlarm();
+  if (!settings.armed){
+    // Not armed, so nothing should be scheduled under our id. If something
+    // still is - a disarm, a bail, or a one-time alarm's own auto-disarm
+    // that cancelled the system side but got interrupted before saving that -
+    // cancel it here rather than leave the system and the app disagreeing
+    // about whether an alarm exists. This is the general backstop for that
+    // whole class of bug, not just the specific paths that already do it.
+    if (mine){ try { await alarmKit.cancelAlarm(ALARMKIT_ID); } catch (e){} }
+    return null;
+  }
+  if (mine && alarmMatchesSettings(mine)){
     $('missingAlarmWarn').classList.add('hide');
     return mine;
   }
+  // Either missing entirely, or present but no longer matching what the app
+  // actually wants (time or repeat days changed and the reschedule never
+  // landed, or drifted some other way) - scheduleAlarmKitNow() replaces
+  // whatever is under this id, so either case is fixed the same way.
   try {
     await scheduleAlarmKitNow();
     $('missingAlarmWarn').classList.add('hide');
@@ -195,10 +253,38 @@ function showAlarmScreen(){
   stopPreview();
   $('alarmTime').value = settings.time;
   renderSounds();
+  renderRepeatDays();
   $('goalVal').textContent = settings.goal;
   $('armBtn').textContent = settings.armed ? 'Disarm' : 'Arm the alarm';
   renderArmState();
   counter.show('alarm');
+}
+
+// ---------------------------------------------------------------------------
+// Repeat-days picker. Empty selection is a deliberate, first-class state -
+// a one-time alarm, not an error - see describeRepeat() and the one-time
+// auto-disarm in onFinish below.
+// ---------------------------------------------------------------------------
+function renderRepeatDays(){
+  const wrap = $('repeatDays');
+  wrap.textContent = '';
+  for (let d = 0; d < 7; d++){
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.textContent = DAY_SHORT[d];
+    const on = settings.repeatDays.includes(d);
+    b.setAttribute('aria-pressed', String(on));
+    b.onclick = async () => {
+      settings.repeatDays = on
+        ? settings.repeatDays.filter(x => x !== d)
+        : [...settings.repeatDays, d];
+      renderRepeatDays();
+      await persistAndMaybeReschedule();
+    };
+    wrap.appendChild(b);
+  }
+  $('repeatNote').textContent = describeRepeat(settings.repeatDays);
 }
 
 // ---------------------------------------------------------------------------
@@ -294,7 +380,7 @@ function renderArmedThrough(){
         const next = nextOccurrence(mine.hour, mine.minute);
         el.textContent = 'Next ring: ' + next.toLocaleString([], {
           weekday: 'short', hour: 'numeric', minute: '2-digit'
-        }) + '. Rings every day at this time until you disarm it.';
+        }) + '. ' + describeRepeat(mine.repeatDays);
         $('missingAlarmWarn').classList.add('hide');
       } else {
         el.textContent = '';
@@ -434,25 +520,16 @@ async function enterRing({ real = false, morning = null } = {}){
   startRinging();
 }
 
-// ---------------------------------------------------------------------------
-// Alarm screen wiring
-// ---------------------------------------------------------------------------
-function wireUI(){
-$('plus').onclick  = async () => {
-  settings.goal = Math.min(50, settings.goal + 1);
-  $('goalVal').textContent = settings.goal;
-  await persistAndMaybeReschedule();
-};
-$('minus').onclick = async () => {
-  settings.goal = Math.max(1, settings.goal - 1);
-  $('goalVal').textContent = settings.goal;
-  await persistAndMaybeReschedule();
-};
-$('alarmTime').onchange = async (e) => {
-  settings.time = e.target.value || settings.time;
-  await persistAndMaybeReschedule();
-};
-
+// Called after any setting a saved, enabled alarm cares about changes - goal,
+// time, sound, or repeat days - from wireUI()'s handlers AND from
+// renderSounds()/renderRepeatDays(), which are sibling top-level functions,
+// not nested inside wireUI(). This has to live at module scope so both can
+// reach it; it previously lived inside wireUI() instead, which meant every
+// call from renderSounds() threw a silent ReferenceError (swallowed as an
+// unhandled rejection in an async onclick) - a sound change updated the UI
+// and played the preview, both of which run before the broken call, but
+// never actually saved or rescheduled anything. Found while adding the
+// repeat-days picker, which needed the exact same call.
 async function persistAndMaybeReschedule(){
   await saveSettings(settings);
   renderArmState();
@@ -475,6 +552,25 @@ async function persistAndMaybeReschedule(){
     await alarm.arm(settings.time, settings.goal, settings.sound);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Alarm screen wiring
+// ---------------------------------------------------------------------------
+function wireUI(){
+$('plus').onclick  = async () => {
+  settings.goal = Math.min(50, settings.goal + 1);
+  $('goalVal').textContent = settings.goal;
+  await persistAndMaybeReschedule();
+};
+$('minus').onclick = async () => {
+  settings.goal = Math.max(1, settings.goal - 1);
+  $('goalVal').textContent = settings.goal;
+  await persistAndMaybeReschedule();
+};
+$('alarmTime').onchange = async (e) => {
+  settings.time = e.target.value || settings.time;
+  await persistAndMaybeReschedule();
+};
 
 $('armBtn').onclick = async () => {
   primeAudio();
@@ -646,9 +742,24 @@ async function boot(){
         // so reopening the app later today does not re-route to push-ups
         // after they are actually finished. completeMission() cancels just
         // the short follow-up Stop may have armed; tomorrow's occurrence on
-        // the recurring alarm itself is untouched.
+        // a REPEATING alarm is untouched - but a one-time alarm (empty
+        // repeatDays) just had its only occurrence. This is also where the
+        // bypass dismissal path ("Turn off alarm anyway") ends up, since bail
+        // goes through this same onFinish - so a one-time alarm is retired
+        // here whether it was finished or bailed on, not just on completion.
         await alarm.markSatisfied(ring.morning);
         await alarmKit.completeMission();
+        if (settings.repeatDays.length === 0){
+          // Cancel in the system FIRST, then reflect that in settings - never
+          // the other way round. Flipping armed=false before the system call
+          // lands (or if it fails) is exactly how the app's state and
+          // AlarmKit's state end up disagreeing about whether an alarm
+          // exists - ensureAlarmKitArmed() is the backstop if this is ever
+          // interrupted between the two awaits below.
+          try { await alarmKit.cancelAlarm(ALARMKIT_ID); } catch (e){}
+          settings.armed = false;
+          await saveSettings(settings);
+        }
         renderArmState();
         return;
       }
@@ -682,6 +793,7 @@ async function boot(){
         // forward in the first place - this is the first chance JS gets to
         // act on it. ensureAlarmKitArmed() first: every foreground return is
         // a chance to notice and fix a missing alarm before it matters again.
+        await sweepStaleLegacyNotifications();
         const mine = await ensureAlarmKitArmed();
         const intent = await alarmKit.consumePushupIntent();
         if (intent.wants && !counter.isRunning()){
@@ -722,6 +834,7 @@ async function boot(){
     // ensureAlarmKitArmed() first: a cold launch (reinstall, force-quit
     // recovery, just opening the app) is exactly when a missing alarm should
     // be noticed and fixed, not left silently broken until the next morning.
+    await sweepStaleLegacyNotifications();
     const mine = await ensureAlarmKitArmed();
     const intent = await alarmKit.consumePushupIntent();
     if (intent.wants){

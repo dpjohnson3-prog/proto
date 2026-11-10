@@ -254,6 +254,50 @@ const cancelCallIdx = armBlock.indexOf('alarmKit.cancelAlarm(ALARMKIT_ID)');
 check('...and both guards run before the alarm is actually cancelled',
   activeRingGuardIdx > -1 && cancelCallIdx > -1 && activeRingGuardIdx < cancelCallIdx);
 
+console.log('\n== repeat days / one-time alarms ==');
+const storage = fs.readFileSync(path.join(ROOT, 'src/storage.js'), 'utf8');
+check('repeatDays defaults to every day, for installs saved before this existed',
+  /repeatDays:\s*\[0,\s*1,\s*2,\s*3,\s*4,\s*5,\s*6\]/.test(storage));
+check('scheduleAlarmKitNow uses the saved repeat days, not a hardcoded set',
+  /repeatDays: settings\.repeatDays/.test(main) &&
+  !/repeatDays: \[0,\s*1,\s*2,\s*3,\s*4,\s*5,\s*6\]/.test(main));
+check('the setup screen has a day picker', idx.includes('id="repeatDays"'));
+check('describeRepeat treats zero days as one-time, not an error',
+  /function describeRepeat\(days\)/.test(main) && /days\.length === 0/.test(main));
+
+// persistAndMaybeReschedule must be reachable from renderSounds() and
+// renderRepeatDays(), both sibling top-level functions, not nested inside
+// wireUI(). It used to live inside wireUI() - every call from renderSounds()
+// silently threw (swallowed as an unhandled rejection in an async onclick),
+// so changing the sound updated the UI/preview but never actually saved or
+// rescheduled anything. Asserting it is declared before wireUI() (module
+// scope, not nested) guards against that regressing.
+const wireUIStart = main.indexOf('function wireUI(){');
+const persistDeclIdx = main.indexOf('async function persistAndMaybeReschedule(){');
+check('persistAndMaybeReschedule is declared at module scope, not nested inside wireUI',
+  persistDeclIdx > -1 && wireUIStart > -1 && persistDeclIdx < wireUIStart);
+
+// The bail path ("Turn off alarm anyway") and the push-up completion path
+// are the same onFinish (see the markSatisfied checks above) - this is the
+// one place a one-time alarm gets retired, whichever way the ring ended.
+const onFinishForOneTime = main.slice(main.indexOf('onFinish: async'), main.indexOf('wireUI();'));
+check('a one-time alarm (no repeat days) is retired after it fires or is bailed on',
+  /settings\.repeatDays\.length === 0/.test(onFinishForOneTime));
+const oneTimeCancelIdx = onFinishForOneTime.indexOf('alarmKit.cancelAlarm(ALARMKIT_ID)');
+const oneTimeArmedFalseIdx = onFinishForOneTime.indexOf('settings.armed = false');
+check('...and cancels the system alarm BEFORE flipping armed to false, never after',
+  oneTimeCancelIdx > -1 && oneTimeArmedFalseIdx > -1 && oneTimeCancelIdx < oneTimeArmedFalseIdx);
+
+check('ensureAlarmKitArmed reconciles a mismatched schedule, not just a missing one',
+  /alarmMatchesSettings\(mine\)/.test(main));
+check('...and cancels an orphaned alarm when settings say not armed',
+  /if \(!settings\.armed\)\{[\s\S]{0,500}alarmKit\.cancelAlarm\(ALARMKIT_ID\)/.test(main));
+
+check('stale legacy notifications are swept under the AlarmKit backend',
+  /function sweepStaleLegacyNotifications/.test(main));
+check('...on both cold boot and every foreground return',
+  (main.match(/await sweepStaleLegacyNotifications\(\)/g) || []).length >= 2);
+
 console.log('\n== alarm sounds ==');
 check('there are 4-6 options', SOUNDS.length >= 4 && SOUNDS.length <= 6, `${SOUNDS.length}`);
 check('ids are unique', new Set(SOUNDS.map(s => s.id)).size === SOUNDS.length);

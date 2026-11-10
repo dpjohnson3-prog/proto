@@ -8,7 +8,13 @@ const KEY = 'dawn.alarm';
 // the next launch know which one to tear down / check - 'alarmkit' (iOS
 // 26.1+, preferred) or 'legacy' (notifications + background audio, the only
 // option below that, or if AlarmKit authorization was denied).
-export const DEFAULTS = { time: '06:30', goal: 10, armed: false, sound: 'chime', alarmBackend: 'legacy' };
+// repeatDays: JS weekday ints (0=Sunday..6=Saturday, matching Date.getDay()).
+// All seven means "every day" (the original, only behaviour); empty means a
+// one-time alarm - fires its next occurrence once, then disarms itself.
+export const DEFAULTS = {
+  time: '06:30', goal: 10, armed: false, sound: 'chime', alarmBackend: 'legacy',
+  repeatDays: [0, 1, 2, 3, 4, 5, 6]
+};
 
 export async function loadSettings(){
   try {

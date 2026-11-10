@@ -213,6 +213,10 @@
   button.chip[aria-pressed="true"]{
     background:rgba(255,107,53,.16);border-color:var(--ember);color:var(--gold);
   }
+  /* Seven single-letter day chips need to fit one row even on the narrowest
+     supported phone - tighter than the sound chips' multi-word labels. */
+  #repeatDays.chips{gap:6px}
+  #repeatDays button.chip{min-width:36px;min-height:40px;padding:8px 0;text-align:center}
 
   /* Back to the alarm screen. Shown ONLY for a "Try it now" test run: when a
      real alarm is ringing this screen is the dismissal gate, and a one-tap
