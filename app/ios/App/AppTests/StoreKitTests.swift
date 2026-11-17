@@ -36,7 +36,8 @@ final class StoreKitTests: XCTestCase {
 
     func testFreshUserIsNotPremiumAndSeesTrial() async throws {
         let a = await active(); XCTAssertEqual(a, false)
-        let y = try XCTUnwrap(try await Product.products(for: [yearly]).first)
+        let loaded = try await Product.products(for: [yearly])
+        let y = try XCTUnwrap(loaded.first)
         XCTAssertEqual(y.subscription?.introductoryOffer?.paymentMode, .freeTrial)
         let period = try XCTUnwrap(y.subscription?.introductoryOffer?.period)
         let days = period.unit == .week ? period.value * 7 : (period.unit == .day ? period.value : -1)
