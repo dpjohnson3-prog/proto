@@ -530,8 +530,11 @@ check('time-sensitive is NOT a declared key (removed - AlarmKit needs no entitle
 const pbx = fs.readFileSync(path.join(ROOT, 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8');
 check('a development team is set', /DEVELOPMENT_TEAM = \w+;/.test(pbx),
   (pbx.match(/DEVELOPMENT_TEAM = (\w+);/) || [])[1] || '');
+// Counted per App-target build configuration (the ones using App/Info.plist),
+// so the AppTests target's own two configurations don't skew it.
+const appCfgs = pbx.split('isa = XCBuildConfiguration;').filter(c => c.includes('INFOPLIST_FILE = App/Info.plist;'));
 check('both App configurations carry it',
-  (pbx.match(/DEVELOPMENT_TEAM = \w+;/g) || []).length === 2);
+  appCfgs.length === 2 && appCfgs.every(c => /DEVELOPMENT_TEAM = \w+;/.test(c)));
 check('the entitlements file is wired into signing',
   (pbx.match(/CODE_SIGN_ENTITLEMENTS = "App\/App\.entitlements";/g) || []).length === 2);
 check('signing stays automatic', !/CODE_SIGN_STYLE = Manual/.test(pbx));
