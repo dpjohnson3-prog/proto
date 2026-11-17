@@ -101,13 +101,13 @@ const prods = [
   { id: P.LIFETIME, displayPrice: '$59.99', price: 59.99 }
 ];
 let c = P.planCopy(prods);
-check('order: Yearly, Monthly, Lifetime', c.plans.map(p => p.id).join() === [P.YEARLY, P.MONTHLY, P.LIFETIME].join());
+check('order: Yearly, Monthly - Lifetime is never sold', c.plans.map(p => p.id).join() === [P.YEARLY, P.MONTHLY].join());
 check('yearly reads "7 days free, then $29.99/year"', c.plans[0].line === '7 days free, then $29.99/year', c.plans[0].line);
 check('yearly CTA "Start free trial"', c.plans[0].cta === 'Start free trial');
 check('yearly badge "Save 50%"', c.plans[0].badge === 'Save 50%');
 check('auto-renew disclosure on subscriptions', /renews automatically/i.test(c.plans[0].fine) && /renews automatically/i.test(c.plans[1].fine));
 check('...and the post-trial price', c.plans[0].fine.includes('$29.99 per year'));
-check('lifetime says it is not a subscription', /not a subscription/i.test(c.plans[2].fine));
+check('no plan offers Lifetime even when StoreKit returns it', !c.plans.some(p => p.id === P.LIFETIME || /lifetime|forever/i.test(p.title + p.cta)));
 c = P.planCopy([{ ...prods[0], trialEligible: false }, prods[1], prods[2]]);
 check('trial already used: no "free" on yearly', !/free/i.test(c.plans[0].line + c.plans[0].cta + c.plans[0].fine));
 c = P.planCopy([{ ...prods[0], displayPrice: '29,99 €', pricePerMonth: '2,50 €' }, { ...prods[1], displayPrice: '4,99 €' }, prods[2]]);

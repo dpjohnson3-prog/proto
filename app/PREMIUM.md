@@ -20,9 +20,9 @@ No third-party SDKs. Purchases go straight to the App Store; the privacy label s
 |---|---|---|---|
 | Dawn Premium Yearly | `dawn.premium.yearly` | $29.99/yr | 1-week free trial, level 1 |
 | Dawn Premium Monthly | `dawn.premium.monthly` | $4.99/mo | level 2 |
-| Dawn Lifetime | `dawn.premium.lifetime` | $59.99 | non-consumable |
+| Dawn Lifetime | `dawn.premium.lifetime` | $59.99 base (never sold) | non-consumable; **not on the paywall** — creators only, via free offer codes |
 
-Group: **Dawn Premium**. Either an active subscription or Lifetime unlocks Premium.
+Group: **Dawn Premium**. The paywall sells only Yearly and Monthly. Either an active subscription or a redeemed Lifetime code unlocks Premium.
 
 ## Free vs Premium
 
@@ -38,7 +38,10 @@ Either signal grandfathers, and once true it is stored:
 1. **App Store record:** `AppTransaction.shared` is verified on device, then `originalAppVersion` is checked. That's the build number of this Apple Account's first download. Dawn 1.0 shipped as build `2` (`1` also accepted). Survives deleting and reinstalling. Sandbox/TestFlight always report `1.0`, which deliberately does not match.
 2. **On the phone:** on the first 1.1 launch, a saved 1.0 alarm (`dawn.alarm`) already exists.
 
-## Creator lifetime access
+## Creator lifetime access (free for life for creators who promote Dawn)
+
+Dawn Lifetime is not sold anywhere in the app. It exists only so a creator can redeem a free code.
+
 
 App Store Connect → Dawn → In-App Purchases → Dawn Lifetime → **Offer Codes → Create Offer** → price **Free** → generate one-time codes (or a custom code). Creators redeem in Dawn (Settings or paywall → **Redeem code**), via the App Store, or via the redeem link. The app picks it up through `Transaction.updates`.
 
@@ -48,12 +51,12 @@ Set up: App Store Connect → Users and Access → Sandbox → create 2–3 test
 
 - [ ] **Free user:** fresh install → add one alarm (10 reps, Chime, every day) → it rings → push-ups dismiss it.
 - [ ] Free: "+ New alarm" a second time, reps +/−, another sound, a day chip, "Streak & stats" → each opens the paywall.
-- [ ] Paywall: Yearly pre-selected, "7 days free, then $29.99/year", Save 50%; Monthly $4.99; Lifetime $59.99. Restore, Redeem code, Terms of Use and Privacy links work.
+- [ ] Paywall: Yearly pre-selected, "7 days free, then $29.99/year", Save 50%, Monthly $4.99, and **no Lifetime option**. Restore, Redeem code, Terms of Use and Privacy links work.
 - [ ] After the first real morning dismissal, the paywall appears once (dismissible). Never during a ring.
 - [ ] **Trial:** Start free trial → Apple sheet shows 1 week free → Premium unlocks. Settings shows "Free trial, ends …".
 - [ ] Trial used: delete the app, reinstall, same account → yearly shows no trial, button "Subscribe".
 - [ ] **Monthly:** second sandbox account → Monthly → Premium.
-- [ ] **Lifetime:** third account → Lifetime → Settings shows "Lifetime", no Manage subscription.
+- [ ] **Creator code:** create a free Dawn Lifetime offer code → third sandbox account → Redeem code → Settings shows "Lifetime", no Manage subscription.
 - [ ] **Restore:** delete, reinstall → Restore Purchases → Premium returns.
 - [ ] Expiry: cancel the sandbox subscription and let it lapse → alarms keep ringing; edits locked; turn off/delete still work.
 - [ ] Offline: airplane mode → relaunch → Premium still on (cached).
@@ -61,7 +64,7 @@ Set up: App Store Connect → Users and Access → Sandbox → create 2–3 test
 
 ## App Review notes (paste into the 1.1 version's Notes)
 
-> Dawn 1.1 adds Dawn Premium: auto-renewable subscriptions in the group "Dawn Premium" (Yearly $29.99 with a 1-week free trial for new subscribers; Monthly $4.99) and a one-time "Dawn Lifetime" purchase ($59.99).
+> Dawn 1.1 adds Dawn Premium: auto-renewable subscriptions in the group "Dawn Premium" (Yearly $29.99 with a 1-week free trial for new subscribers; Monthly $4.99). The non-consumable "Dawn Lifetime" is not sold in the app; it is only granted to promotional partners through free offer codes, redeemed via "Redeem code".
 >
 > Free without purchase: one daily alarm with the default 10 push-ups and default sound, plus "Try it now", which runs the full experience on demand (alarm sound and on-device camera push-up counting that turns it off).
 >
@@ -76,6 +79,6 @@ Set up: App Store Connect → Users and Access → Sandbox → create 2–3 test
 1. `npm run verify` and the Xcode StoreKit tests pass.
 2. Sandbox checklist above, plus the overnight two-alarm test.
 3. Archive 1.1 (3) → upload.
-4. On the 1.1 version page → In-App Purchases and Subscriptions → add all three products. Add a review screenshot of the paywall to each product.
+4. On the 1.1 version page → In-App Purchases and Subscriptions → add all three products (Lifetime too, so offer codes work). Add a review screenshot of the paywall to each product.
 5. Review notes above. App Privacy: unchanged (Data Not Collected).
 6. Record the review video, then submit (only when you say go).

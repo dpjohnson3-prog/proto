@@ -58,7 +58,7 @@ export function savingsPercent(yearly, monthly){
 
 export function planCopy(products){
   const by = Object.fromEntries((products || []).map(p => [p.id, p]));
-  const y = by[YEARLY], m = by[MONTHLY], l = by[LIFETIME];
+  const y = by[YEARLY], m = by[MONTHLY];
   const trial = y && y.trial && y.trialEligible ? periodText(y.trial) : null;
   const save = savingsPercent(y, m);
   const plans = [];
@@ -80,11 +80,9 @@ export function planCopy(products){
     fine: m.displayPrice + ' per month. Renews automatically unless cancelled at least 24 hours before the end ' +
       'of the current period. Cancel anytime in Settings.'
   });
-  if (l) plans.push({
-    id: LIFETIME, title: 'Lifetime', badge: null,
-    line: l.displayPrice + ' once', sub: 'Yours forever', cta: 'Unlock forever',
-    fine: 'One payment of ' + l.displayPrice + '. Not a subscription - nothing renews.'
-  });
+  // Dawn Lifetime is never sold on the paywall: it exists only so free offer
+  // codes can give creators Premium for life. Redeemed codes still unlock
+  // (DawnStore.swift reads it from currentEntitlements).
   return { plans, hasTrial: !!trial };
 }
 
