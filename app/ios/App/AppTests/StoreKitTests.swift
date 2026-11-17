@@ -13,8 +13,9 @@ final class StoreKitTests: XCTestCase {
     let plugin = DawnStorePlugin()
 
     override func setUp() async throws {
-        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Dawn.storekit")
+        // Bundled into the test target so this runs on a real iPhone as well
+        // as in the Simulator (a Mac file path does not exist on the phone).
+        let url = try XCTUnwrap(Bundle(for: StoreKitTests.self).url(forResource: "Dawn", withExtension: "storekit"))
         session = try SKTestSession(contentsOf: url)
         session.disableDialogs = true
         session.resetToDefaultState()

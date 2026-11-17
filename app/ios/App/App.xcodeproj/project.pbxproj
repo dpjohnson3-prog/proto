@@ -28,6 +28,7 @@
 		60D4B70EE9F94DBEB186F37C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 28BEA00DDF4447B791374AA6 /* PrivacyInfo.xcprivacy */; };
 		9F4D7CA04EF04C45AEAFFE0B /* DawnStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D50E38A55D74D6BB85DB310 /* DawnStore.swift */; };
 		D4A0B1C2E3F4051627380004 /* StoreKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4A0B1C2E3F4051627380003 /* StoreKitTests.swift */; };
+		D4A0B1C2E3F405162738000E /* Dawn.storekit in Resources */ = {isa = PBXBuildFile; fileRef = D4A0B1C2E3F405162738000D /* Dawn.storekit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -173,6 +174,7 @@
 			buildPhases = (
 				D4A0B1C2E3F4051627380005 /* Sources */,
 				D4A0B1C2E3F4051627380006 /* Frameworks */,
+				D4A0B1C2E3F405162738000F /* Resources */,
 			);
 			buildRules = (
 			);
@@ -244,6 +246,14 @@
 				8981F963EDFB4C08AC9E2D7D /* reveille.wav in Resources */,
 				A7A1BEF8A2AD42A0B2AEAF1A /* keepalive.wav in Resources */,
 				60D4B70EE9F94DBEB186F37C /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4A0B1C2E3F405162738000F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D4A0B1C2E3F405162738000E /* Dawn.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
