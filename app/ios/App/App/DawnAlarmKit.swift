@@ -67,6 +67,20 @@ private let kAlarmSound    = "dawn.alarmkit.sound"
 private let kLastError     = "dawn.alarmkit.lastError"
 private let kLastStopIntentAt = "dawn.alarmkit.lastStopIntentAt"
 
+// MULTIPLE ALARMS (v1.1). Each JS alarm id has its own sound and alert
+// label, and its own pending "ring again" follow-up - so stopping, disarming
+// or deleting one alarm can never cancel another alarm's re-ring.
+//   kSoundMap  [callerId: "chime.wav"]
+//   kLabelMap  [callerId: "10 push-ups to turn it off - ..."]
+//   kFollowUps [ownerCallerId: followUpUUIDString]
+// The owner "" means "unknown": a Stop tapped on an alarm scheduled by v1.0,
+// whose intent carries no alarm id. kAlarmSound / kFollowUpId above are the
+// v1.0 single-alarm keys, still read as fallbacks and cleaned up.
+private let kSoundMap  = "dawn.alarmkit.soundMap"
+private let kLabelMap  = "dawn.alarmkit.labelMap"
+private let kFollowUps = "dawn.alarmkit.followUps"
+private let kRangId    = "dawn.alarmkit.rangId"
+
 /// How soon Stop re-rings if the mission is not done. Short enough that
 /// walking away does not buy real rest; long enough to actually reach the
 /// push-up screen and start a set.
@@ -105,6 +119,15 @@ struct DawnAlarmStopIntent: AppIntent, LiveActivityIntent {
     static var title: LocalizedStringResource = "Stop"
     static var openAppWhenRun: Bool { true }
 
+    /// Which JS alarm this Stop belongs to. Optional so an alarm scheduled by
+    /// v1.0 (whose intent was created without it) still decodes and runs;
+    /// nil is treated as the unknown owner "".
+    @Parameter(title: "Alarm")
+    var alarmID: String?
+
+    init() {}
+    init(alarmID: String) { self.alarmID = alarmID }
+
     func perform() async throws -> some IntentResult {
         // Set before anything else can fail or be cut short, so the debug
         // readout can distinguish "perform() never ran at all" (this stays
@@ -119,7 +142,7 @@ struct DawnAlarmStopIntent: AppIntent, LiveActivityIntent {
         // Not swallowed with try? anymore: if this throws, it needs to be
         // visible, not silently lost.
         do {
-            try await DawnAlarmKitEngine.scheduleFollowUp()
+            try await DawnAlarmKitEngine.scheduleFollowUp(for: alarmID ?? "")
             UserDefaults.standard.removeObject(forKey: kLastError)
         } catch {
             let msg = "\(Date()): scheduleFollowUp failed: \(error)"
@@ -128,6 +151,7 @@ struct DawnAlarmStopIntent: AppIntent, LiveActivityIntent {
         }
         let d = UserDefaults.standard
         d.set(true, forKey: kWantsPushups)
+        d.set(alarmID ?? "", forKey: kRangId)
         // "Today" at the moment Stop is tapped, in the device's own calendar -
         // must match alarm.js's dayKey() format (local Y-M-D) so JS can use
         // it as the morning key when it calls enterRing().
@@ -159,6 +183,17 @@ enum DawnAlarmKitEngine {
         var map = readMap()
         for (k, v) in map where v == callerId { map.removeValue(forKey: k) }
         writeMap(map)
+        setMapValue(kSoundMap, callerId, nil)
+        setMapValue(kLabelMap, callerId, nil)
+    }
+
+    static func mapValue(_ key: String, _ callerId: String) -> String? {
+        (UserDefaults.standard.dictionary(forKey: key) as? [String: String])?[callerId]
+    }
+    static func setMapValue(_ key: String, _ callerId: String, _ value: String?) {
+        var m = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+        m[callerId] = value
+        UserDefaults.standard.set(m, forKey: key)
     }
     static func uuid(forCallerId callerId: String) -> UUID? {
         guard let s = readMap().first(where: { $0.value == callerId })?.key else { return nil }
@@ -204,7 +239,7 @@ enum DawnAlarmKitEngine {
 
     // MARK: configuration
 
-    static func makeConfig(label: String, schedule: Alarm.Schedule?, soundFile: String?)
+    static func makeConfig(callerId: String, label: String, schedule: Alarm.Schedule?, soundFile: String?)
         -> AlarmManager.AlarmConfiguration<DawnMissionMetadata> {
         let alert = AlarmPresentation.Alert(
             title: LocalizedStringResource(stringLiteral: label))
@@ -220,37 +255,53 @@ enum DawnAlarmKitEngine {
         return AlarmManager.AlarmConfiguration<DawnMissionMetadata>.alarm(
             schedule: schedule,
             attributes: attributes,
-            stopIntent: DawnAlarmStopIntent(),
+            stopIntent: DawnAlarmStopIntent(alarmID: callerId),
             sound: sound)
     }
 
-    /// The near-term alarm Stop rearms. Replaces whatever follow-up already
-    /// existed (cancelling it first) so repeated Stop taps cannot pile up
-    /// alarms toward AlarmError.maximumLimitReached. Reuses whatever sound
-    /// scheduleAlarm last recorded, so a re-ring does not silently drop back
-    /// to the system default.
+    /// The near-term alarm Stop rearms for ONE alarm (its owner). Replaces
+    /// that owner's existing follow-up (cancelling it first) so repeated Stop
+    /// taps cannot pile up alarms toward AlarmError.maximumLimitReached, and
+    /// re-rings with the owner's own sound and label - never another alarm's.
     @discardableResult
-    static func scheduleFollowUp(after seconds: TimeInterval = kFollowUpSeconds) async throws -> Alarm {
+    static func scheduleFollowUp(for owner: String, after seconds: TimeInterval = kFollowUpSeconds) async throws -> Alarm {
+        cancelFollowUp(for: owner)
         let d = UserDefaults.standard
-        if let old = d.string(forKey: kFollowUpId), let oldUUID = UUID(uuidString: old) {
-            stopIfAlerting(id: oldUUID)
-            _ = try? AlarmManager.shared.cancel(id: oldUUID)
-        }
         let id = UUID()
-        let config = makeConfig(label: "Dawn Alarm",
-                                 schedule: .fixed(Date().addingTimeInterval(seconds)),
-                                 soundFile: d.string(forKey: kAlarmSound))
+        let config = makeConfig(callerId: owner,
+                                label: mapValue(kLabelMap, owner) ?? "Dawn Alarm",
+                                schedule: .fixed(Date().addingTimeInterval(seconds)),
+                                soundFile: mapValue(kSoundMap, owner) ?? d.string(forKey: kAlarmSound))
         let alarm = try await AlarmManager.shared.schedule(id: id, configuration: config)
-        d.set(id.uuidString, forKey: kFollowUpId)
+        setMapValue(kFollowUps, owner, id.uuidString)
         return alarm
     }
 
-    static func cancelFollowUpIfAny() {
+    static func followUps() -> [String: String] {
+        UserDefaults.standard.dictionary(forKey: kFollowUps) as? [String: String] ?? [:]
+    }
+
+    /// Cancels the follow-up owned by `owner`, plus any v1.0-era single
+    /// follow-up (kFollowUpId), which has no recorded owner.
+    static func cancelFollowUp(for owner: String) {
         let d = UserDefaults.standard
-        guard let s = d.string(forKey: kFollowUpId), let uuid = UUID(uuidString: s) else { return }
-        stopIfAlerting(id: uuid)
-        _ = try? AlarmManager.shared.cancel(id: uuid)
-        d.removeObject(forKey: kFollowUpId)
+        if let s = followUps()[owner], let uuid = UUID(uuidString: s) {
+            stopIfAlerting(id: uuid)
+            _ = try? AlarmManager.shared.cancel(id: uuid)
+        }
+        setMapValue(kFollowUps, owner, nil)
+        if let s = d.string(forKey: kFollowUpId), let uuid = UUID(uuidString: s) {
+            stopIfAlerting(id: uuid)
+            _ = try? AlarmManager.shared.cancel(id: uuid)
+            d.removeObject(forKey: kFollowUpId)
+        }
+    }
+
+    /// A finished set means the person is up: every outstanding re-ring goes.
+    /// Alarms that have not rung yet today are untouched and still ring.
+    static func cancelAllFollowUps() {
+        for owner in followUps().keys { cancelFollowUp(for: owner) }
+        cancelFollowUp(for: "")
     }
 
     /// cancel(id:) and stop(id:) are different AlarmKit operations - ground-
@@ -322,7 +373,7 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
                     time: time,
                     repeats: weekdays.isEmpty ? .never : .weekly(weekdays)))
                 let uuid = UUID()
-                let config = DawnAlarmKitEngine.makeConfig(label: label, schedule: schedule, soundFile: soundFile)
+                let config = DawnAlarmKitEngine.makeConfig(callerId: callerId, label: label, schedule: schedule, soundFile: soundFile)
                 let alarm = try await AlarmManager.shared.schedule(id: uuid, configuration: config)
 
                 // Only now, with the replacement confirmed live, retire the
@@ -334,7 +385,11 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
                     _ = try? AlarmManager.shared.cancel(id: old)
                 }
 
-                if let soundFile { UserDefaults.standard.set(soundFile, forKey: kAlarmSound) }
+                if let soundFile {
+                    UserDefaults.standard.set(soundFile, forKey: kAlarmSound)
+                    DawnAlarmKitEngine.setMapValue(kSoundMap, callerId, soundFile)
+                }
+                DawnAlarmKitEngine.setMapValue(kLabelMap, callerId, label)
                 call.resolve(["id": callerId, "state": "\(alarm.state)"])
             } catch {
                 call.reject("scheduleAlarm failed: \(error)")
@@ -348,6 +403,7 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("id is required"); return
         }
         guard let uuid = DawnAlarmKitEngine.uuid(forCallerId: callerId) else {
+            DawnAlarmKitEngine.cancelFollowUp(for: callerId)
             call.resolve(["ok": true]); return
         }
         do {
@@ -360,7 +416,8 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
             DawnAlarmKitEngine.stopIfAlerting(id: uuid)
             try AlarmManager.shared.cancel(id: uuid)
             DawnAlarmKitEngine.forget(callerId: callerId)
-            DawnAlarmKitEngine.cancelFollowUpIfAny()
+            DawnAlarmKitEngine.cancelFollowUp(for: callerId)
+            DawnAlarmKitEngine.cancelFollowUp(for: "")
             call.resolve(["ok": true])
         } catch {
             call.reject("cancelAlarm failed: \(error)")
@@ -386,15 +443,14 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
             // below (JS has no id for it), but whether it actually exists in
             // the system - and what state it's in - is exactly the question
             // when it was scheduled without error but never audibly rang.
-            if let followUpIdStr = d.string(forKey: kFollowUpId), let followUpUUID = UUID(uuidString: followUpIdStr) {
-                if let found = all.first(where: { $0.id == followUpUUID }) {
-                    debug["followUpAlarmState"] = "\(found.state)"
-                } else {
-                    debug["followUpAlarmState"] = "not found in AlarmManager.alarms"
-                }
-            } else {
-                debug["followUpAlarmState"] = "(no follow-up currently tracked)"
+            var states: [String] = []
+            var pending = DawnAlarmKitEngine.followUps()
+            if let legacy = d.string(forKey: kFollowUpId) { pending["(v1.0)"] = legacy }
+            for (owner, idStr) in pending {
+                let st = all.first(where: { $0.id.uuidString == idStr }).map { "\($0.state)" } ?? "not found"
+                states.append("\(owner.isEmpty ? "(unknown)" : owner): \(st)")
             }
+            debug["followUpAlarmState"] = states.isEmpty ? "(no follow-up currently tracked)" : states.joined(separator: ", ")
             let out: [[String: Any]] = all.compactMap { a in
                 guard let callerId = DawnAlarmKitEngine.callerId(forUUIDString: a.id.uuidString) else {
                     return nil   // internal follow-up alarms are not JS's concern
@@ -423,7 +479,7 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
     /// The main recurring alarm is untouched: tomorrow still rings.
     @objc func completeMission(_ call: CAPPluginCall) {
         guard #available(iOS 26.1, *) else { call.resolve(["ok": true]); return }
-        DawnAlarmKitEngine.cancelFollowUpIfAny()
+        DawnAlarmKitEngine.cancelAllFollowUps()
         call.resolve(["ok": true])
     }
 
@@ -434,7 +490,8 @@ public class DawnAlarmKitPlugin: CAPPlugin, CAPBridgedPlugin {
         let d = UserDefaults.standard
         let wants = d.bool(forKey: kWantsPushups)
         let morning = d.string(forKey: kMorning) ?? ""
+        let alarmId = d.string(forKey: kRangId) ?? ""
         if wants { d.set(false, forKey: kWantsPushups) }
-        call.resolve(["wants": wants, "morning": morning])
+        call.resolve(["wants": wants, "morning": morning, "alarmId": alarmId])
     }
 }

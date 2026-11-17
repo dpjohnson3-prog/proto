@@ -21,10 +21,32 @@
 
 <div class="wrap">
 
-  <!-- ALARM SETUP -->
-  <section class="screen on" id="sAlarm">
+  <!-- HOME: the list of alarms -->
+  <section class="screen on" id="sHome">
+    <button class="iconBtn" id="settingsBtn" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     <h1>Push-ups to turn it off.</h1>
-    <p class="lede">Set a time and a number. When it goes off, the camera counts your reps &mdash; the alarm stops when you finish them.</p>
+    <p class="lede">When an alarm goes off, the camera counts your reps &mdash; it stops when you finish them.</p>
+
+    <div class="banner hide" id="legacyNote"></div>
+    <div class="warn hide" id="lapsedNote"></div>
+    <div class="warn hide" id="homeWarn"></div>
+
+    <div class="alarmList" id="alarmList" role="list"></div>
+    <button class="ghost addAlarm" id="addAlarm">+ New alarm</button>
+
+    <div style="margin-top:auto;padding-top:24px">
+      <button class="ghost" id="statsBtn">Streak &amp; stats</button>
+      <button class="ghost" id="testBtn" style="margin-top:12px">Try it now, without waiting</button>
+      <p class="note" id="debugState" style="margin-top:10px;font-family:monospace;font-size:11px;white-space:pre-wrap"></p>
+      <p class="note" style="margin-top:14px">Counting runs entirely on your phone. No video leaves the device and nothing is recorded.</p>
+    </div>
+  </section>
+
+  <!-- ALARM EDITOR -->
+  <section class="screen" id="sAlarm">
+    <button class="backArrow" id="editBack" aria-label="Back to alarms">&#8592;</button>
+    <h1 id="editTitle" class="editTitle">New alarm</h1>
+    <div class="banner hide" id="editLocked"></div>
 
     <div class="field">
       <label for="alarmTime">Wake at</label>
@@ -57,24 +79,33 @@
       <p class="note" id="soundNote"></p>
     </div>
 
-    <div class="banner hide" id="permWarn"></div>
     <div class="warn hide" id="armWarn"></div>
-    <div class="warn hide" id="audioWarn"></div>
-    <div class="warn hide" id="missingAlarmWarn">
-      <p id="missingAlarmText"></p>
-      <button id="rearmBtn" style="margin-top:10px">Re-arm</button>
-    </div>
 
     <div style="margin-top:auto">
-      <button id="armBtn">Arm the alarm</button>
-      <button class="ghost" id="testBtn" style="margin-top:12px">Try it now, without waiting</button>
-      <p class="note" id="armState" style="margin-top:16px">Not armed.</p>
-      <p class="note" id="armThrough" style="margin-top:6px"></p>
-      <p class="note caution" id="ringerNote" style="margin-top:10px"></p>
-      <p class="note caution" id="quitNote" style="margin-top:10px"></p>
-      <p class="note" id="debugState" style="margin-top:10px;font-family:monospace;font-size:11px;white-space:pre-wrap"></p>
-      <p class="note" style="margin-top:10px">Counting runs entirely on your phone. No video leaves the device and nothing is recorded.</p>
+      <button id="saveBtn">Save</button>
+      <button class="ghost" id="tryAlarmBtn" style="margin-top:12px">Try this alarm now</button>
+      <button class="quiet danger" id="deleteBtn" style="margin-top:6px">Delete alarm</button>
     </div>
+  </section>
+
+  <!-- STREAK & STATS (Premium) -->
+  <section class="screen" id="sStats">
+    <button class="backArrow" id="statsBack" aria-label="Back to alarms">&#8592;</button>
+    <h1 class="editTitle">Your mornings</h1>
+    <div class="streakHero">
+      <div class="streakNum" id="stStreak">0</div>
+      <div class="streakLbl" id="stStreakLbl">morning streak</div>
+    </div>
+    <div class="statGrid">
+      <div class="stat"><b id="stBest">0</b><span>best streak</span></div>
+      <div class="stat"><b id="stMornings">0</b><span>mornings up</span></div>
+      <div class="stat"><b id="stPushups">0</b><span>push-ups</span></div>
+      <div class="stat"><b id="stAvg">&ndash;</b><span>avg. minutes to get up</span></div>
+    </div>
+    <p class="note" style="margin:22px 0 10px">Last 30 days</p>
+    <div class="dots" id="stDots" aria-label="Last 30 days"></div>
+    <p class="note" id="stEmpty" style="margin-top:16px"></p>
+    <p class="note" style="margin-top:auto;padding-top:20px">Your history stays on this iPhone. Only mornings an alarm actually rang count; a day off never breaks your streak.</p>
   </section>
 
   <!-- RINGING -->
@@ -141,6 +172,51 @@
   <button class="ghost" id="toTimer">Switch to a 30-second hold instead</button>
   <button class="ghost" id="bail">Just turn the alarm off</button>
   <button class="quiet" id="closeSheet">Go back</button>
+</div>
+
+<!-- SETTINGS -->
+<div class="sheet" id="settingsSheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+  <h2 id="setTitle">Settings</h2>
+  <div class="setRow"><span>Dawn Premium</span><b id="setStatus">Checking…</b></div>
+  <button id="setPlans">See plans</button>
+  <button class="ghost" id="setRestore">Restore Purchases</button>
+  <button class="ghost" id="setRedeem">Redeem code</button>
+  <button class="ghost" id="setManage">Manage subscription</button>
+  <p class="setMsg" id="setMsg" role="status" aria-live="polite"></p>
+  <div class="setLinks">
+    <a class="pwLink" id="setTerms" target="_blank" rel="noopener">Terms of Use</a>
+    <a class="pwLink" id="setPrivacy" target="_blank" rel="noopener">Privacy Policy</a>
+  </div>
+  <p class="setVersion" id="setVersion">Dawn</p>
+  <button class="quiet" id="setClose">Done</button>
+</div>
+
+<!-- DAWN PREMIUM PAYWALL. Plans and prices are filled from StoreKit
+     (src/paywall.js) - nothing in this markup is a price. -->
+<div class="paywall" id="paywall" role="dialog" aria-modal="true" aria-labelledby="pwTitle" hidden>
+  <div class="pwGlow" aria-hidden="true"></div>
+  <button class="pwClose" id="pwClose" aria-label="Close">&times;</button>
+  <div class="pwBody">
+    <p class="pwEyebrow">Dawn Premium</p>
+    <h2 id="pwTitle">Get up the first time.</h2>
+    <p class="pwLede" id="pwLede"></p>
+    <ul class="pwBenefits">
+      <li><span class="pwTick" aria-hidden="true"></span><div><b>Unlimited alarms</b><span class="d">Weekdays at 6, Saturdays at 8, a one-off for the early flight.</span></div></li>
+      <li><span class="pwTick" aria-hidden="true"></span><div><b>Your reps, your sound</b><span class="d">Any count from 1 to 50, and every alarm sound.</span></div></li>
+      <li><span class="pwTick" aria-hidden="true"></span><div><b>Repeat schedules</b><span class="d">Pick the days. Or ring just once.</span></div></li>
+      <li><span class="pwTick" aria-hidden="true"></span><div><b>Streak &amp; stats</b><span class="d">Every morning you got up, kept on your iPhone.</span></div></li>
+    </ul>
+    <div class="pwPlans" id="pwPlans" role="radiogroup" aria-label="Choose a plan"></div>
+    <p class="pwMsg" id="pwMsg" role="status" aria-live="polite"></p>
+    <button class="pwCta" id="pwCta" disabled>Loading plans…</button>
+    <p class="pwFine" id="pwFine"></p>
+    <div class="pwLinks">
+      <button class="pwLink" id="pwRestore">Restore Purchases</button>
+      <button class="pwLink" id="pwRedeem">Redeem code</button>
+      <a class="pwLink" id="pwTerms" target="_blank" rel="noopener">Terms of Use</a>
+      <a class="pwLink" id="pwPrivacy" target="_blank" rel="noopener">Privacy Policy</a>
+    </div>
+  </div>
 </div>
 
 <script type="module" src="/src/main.js"></script>

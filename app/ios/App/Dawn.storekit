@@ -1,0 +1,98 @@
+{
+  "identifier" : "D4A1B2C3",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "59.99",
+      "familyShareable" : false,
+      "internalID" : "6700000003",
+      "localizations" : [
+        {
+          "description" : "Every Dawn Premium feature, forever",
+          "displayName" : "Dawn Lifetime",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "dawn.premium.lifetime",
+      "referenceName" : "Dawn Lifetime",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21700001",
+      "localizations" : [
+
+      ],
+      "name" : "Dawn Premium",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "29.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6700000001",
+          "introductoryOffer" : {
+            "displayPrice" : "0.00",
+            "internalID" : "6700000099",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1W"
+          },
+          "localizations" : [
+            {
+              "description" : "Every Dawn Premium feature",
+              "displayName" : "Dawn Premium Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "dawn.premium.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Dawn Premium Yearly",
+          "subscriptionGroupID" : "21700001",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6700000002",
+          "localizations" : [
+            {
+              "description" : "Every Dawn Premium feature",
+              "displayName" : "Dawn Premium Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "dawn.premium.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Dawn Premium Monthly",
+          "subscriptionGroupID" : "21700001",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

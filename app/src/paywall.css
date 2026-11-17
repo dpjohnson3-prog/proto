@@ -1,0 +1,220 @@
+/* Dawn Premium paywall, settings sheet, alarm list, editor and stats. Hand-written - kept out of
+   styles.css because scripts/port.py regenerates that file. Uses the same
+   tokens (--night, --ember, --gold, ...) declared there. */
+
+/* ---- paywall --------------------------------------------------------- */
+.paywall{
+  position:fixed;inset:0;z-index:30;
+  background:#05070F;color:var(--text);
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+  opacity:0;transform:translateY(16px);
+  transition:opacity .26s ease-out,transform .26s ease-out;
+}
+.paywall.on{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.paywall{transition:none;transform:none}}
+
+/* A sunrise just below the top edge - the one piece of colour on the page. */
+.pwGlow{
+  position:absolute;left:50%;top:-180px;width:640px;height:520px;
+  transform:translateX(-50%);pointer-events:none;
+  background:
+    radial-gradient(closest-side,rgba(255,193,94,.55),rgba(255,107,53,.28) 45%,rgba(107,58,91,.18) 70%,transparent);
+  filter:blur(8px);
+}
+.pwBody{
+  position:relative;max-width:480px;margin:0 auto;min-height:100%;
+  display:flex;flex-direction:column;
+  padding:calc(52px + env(safe-area-inset-top,0px)) calc(24px + env(safe-area-inset-right,0px))
+          calc(20px + env(safe-area-inset-bottom,0px)) calc(24px + env(safe-area-inset-left,0px));
+}
+button.pwClose{
+  position:fixed;z-index:2;
+  top:calc(14px + env(safe-area-inset-top,0px));
+  right:calc(14px + env(safe-area-inset-right,0px));
+  width:40px;height:40px;min-height:40px;padding:0;border-radius:20px;
+  background:rgba(255,255,255,.08);color:var(--dim);
+  font-size:22px;font-weight:400;line-height:1;
+}
+.pwEyebrow{
+  font-size:13px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--gold);margin-bottom:12px;
+}
+.paywall h2{
+  font-size:clamp(30px,8.6vw,40px);font-weight:800;letter-spacing:-.035em;line-height:1.02;
+  margin-bottom:12px;
+}
+.pwLede{color:var(--dim);font-size:16px;line-height:1.5;margin-bottom:22px;max-width:34ch}
+
+.pwBenefits{list-style:none;display:flex;flex-direction:column;gap:13px;margin-bottom:24px}
+.pwBenefits li{display:flex;gap:14px;align-items:flex-start}
+.pwTick{
+  flex:none;width:24px;height:24px;border-radius:12px;margin-top:1px;
+  background:rgba(255,193,94,.14);position:relative;
+}
+.pwTick::after{
+  content:'';position:absolute;left:8px;top:5px;width:6px;height:11px;
+  border:solid var(--gold);border-width:0 2px 2px 0;transform:rotate(45deg);
+}
+.pwBenefits b{display:block;font-size:16px;font-weight:700;line-height:1.3}
+.pwBenefits span.d{display:block;color:var(--dim);font-size:14px;line-height:1.4;margin-top:1px}
+/* Most phones: benefit headlines only, so plans, the CTA and the legal
+   links all fit without scrolling. Tall phones get the detail lines. */
+@media (max-height:900px){
+  .pwBenefits span.d{display:none}
+  .pwBenefits{gap:11px;margin-bottom:20px}
+  .paywall h2{font-size:30px}
+  .pwLede{margin-bottom:18px}
+}
+
+.pwPlans{display:flex;flex-direction:column;gap:10px;margin-top:auto}
+button.pwPlan,.pwPlan{
+  display:flex;align-items:center;gap:14px;text-align:left;
+  width:100%;min-height:70px;padding:12px 16px;border-radius:16px;
+  background:rgba(255,255,255,.04);color:var(--text);
+  border:1.5px solid rgba(255,255,255,.10);font-weight:400;
+  transition:border-color .15s,background .15s;
+}
+.pwPlan[aria-checked="true"]{
+  border-color:var(--gold);background:rgba(255,193,94,.08);
+  box-shadow:0 0 0 4px rgba(255,193,94,.08);
+}
+.pwRadio{
+  flex:none;width:22px;height:22px;border-radius:11px;
+  border:2px solid rgba(255,255,255,.28);position:relative;
+}
+.pwPlan[aria-checked="true"] .pwRadio{border-color:var(--gold)}
+.pwPlan[aria-checked="true"] .pwRadio::after{
+  content:'';position:absolute;inset:3px;border-radius:50%;background:var(--gold);
+}
+.pwPlanText{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.pwPlanTitle{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pwPlanLine{font-size:14px;color:#C9D0E4;line-height:1.35}
+.pwPlanSub{font-size:13px;color:var(--dim);text-align:right;flex:none;max-width:9ch;line-height:1.3}
+.pwBadge{
+  font-style:normal;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 8px;border-radius:999px;background:var(--gold);color:#1A1004;
+}
+.pwSkeleton{
+  background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.09),rgba(255,255,255,.04));
+  background-size:200% 100%;animation:pwShimmer 1.2s linear infinite;
+}
+@keyframes pwShimmer{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.pwSkeleton{animation:none}}
+
+.pwMsg{font-size:14px;line-height:1.45;min-height:0;margin-top:12px;text-align:center}
+.pwMsg:empty{display:none}
+.pwMsg.error{color:#FFB3C1}
+.pwMsg.info{color:#CFF5F1}
+
+button.pwCta{
+  margin-top:16px;border-radius:16px;min-height:58px;font-size:18px;font-weight:700;
+  background:linear-gradient(90deg,var(--ember),var(--gold));color:#1A0D04;
+}
+button.pwCta:disabled{opacity:.6}
+button.pwCta.ok{background:var(--signal);opacity:1}
+.pwFine{font-size:12px;line-height:1.5;color:var(--dim);text-align:center;margin-top:10px}
+.pwFine:empty{display:none}
+
+.pwLinks{display:flex;justify-content:center;align-items:center;gap:4px;margin-top:14px;flex-wrap:wrap}
+.pwLink,button.pwLink{
+  width:auto;min-height:44px;padding:10px 10px;background:none;border:none;
+  color:var(--dim);font-size:13px;font-weight:500;text-decoration:none;
+  display:inline-flex;align-items:center;
+}
+/* Two tidy rows (Restore · Redeem / Terms · Privacy), no separators to strand on a wrap. */
+.pwLinks .pwLink{flex:0 0 46%;justify-content:center}
+
+/* ---- setup-screen additions ------------------------------------------ */
+/* Settings gear: absolutely placed in the setup screen's top-right corner,
+   with the heading padded clear of it. */
+#sHome{position:relative}
+#sHome h1{padding-right:52px}
+button.iconBtn{
+  position:absolute;top:0;right:0;
+  width:44px;height:44px;min-height:44px;padding:0;border-radius:12px;
+  background:rgba(11,16,38,.55);border:1.5px solid #2B3763;color:var(--dim);
+  display:flex;align-items:center;justify-content:center;
+}
+button.iconBtn svg{width:20px;height:20px}
+.warn button.renew{margin-top:10px;min-height:44px;padding:10px 16px}
+
+/* ---- settings sheet (reuses .sheet) ----------------------------------- */
+#settingsSheet{z-index:25;max-height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.setRow{
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  padding:14px 0;border-top:1px solid #222C52;margin-bottom:12px;
+}
+.setRow span{color:var(--dim);font-size:15px}
+.setRow b{font-size:15px;text-align:right}
+.setMsg{font-size:14px;color:#CFF5F1;margin:4px 0 10px;text-align:center}
+.setMsg:empty{display:none}
+.setLinks{display:flex;justify-content:center;gap:4px}
+.setVersion{
+  text-align:center;color:#56618A !important;font-size:12px !important;
+  margin:6px 0 4px !important;padding:8px;user-select:none;-webkit-user-select:none;
+}
+.setSupport{
+  background:#0E1430;border:1px solid #2B3763;border-radius:12px;padding:12px 14px;margin-bottom:12px;
+}
+.setSupport.hide{display:none}
+.setSupport p{margin-bottom:8px !important;font-size:13px !important}
+.setSupport code{
+  display:block;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);
+  word-break:break-all;margin-bottom:10px;user-select:all;-webkit-user-select:all;
+}
+.setSupport button{min-height:44px;margin-bottom:0 !important}
+
+/* ---- alarm list (home) ------------------------------------------------- */
+.alarmList{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.alarmCard{
+  display:flex;align-items:center;gap:12px;
+  background:rgba(27,37,69,.55);border:1.5px solid #2B3763;border-radius:16px;padding:6px 8px 6px 4px;
+}
+.alarmCard.off{opacity:.62}
+button.alarmMain{
+  flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+  background:none;border:none;color:var(--text);padding:10px 12px;min-height:64px;text-align:left;font-weight:400;
+}
+.alarmTime{font-size:32px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1.05}
+.alarmSub{font-size:14px;color:var(--dim);line-height:1.35}
+.alarmErr{font-size:13px;color:#FFB3C1;line-height:1.35}
+button.switch{
+  flex:none;width:52px;height:32px;min-height:32px;padding:0;border-radius:16px;
+  background:#2B3763;position:relative;transition:background .15s;
+}
+button.switch::after{
+  content:'';position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:13px;
+  background:#E8ECF7;transition:transform .15s;
+}
+button.switch[aria-checked="true"]{background:var(--ember)}
+button.switch[aria-checked="true"]::after{transform:translateX(20px)}
+@media (prefers-reduced-motion:reduce){button.switch,button.switch::after{transition:none}}
+button.addAlarm{min-height:52px}
+
+/* Premium lock marker on chips / stepper / buttons a free user taps. */
+.lock::after{
+  content:'';display:inline-block;width:9px;height:11px;margin-left:6px;vertical-align:-1px;
+  background:currentColor;opacity:.75;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 11'%3E%3Cpath d='M1.5 4.5V3a3 3 0 0 1 6 0v1.5h.5a1 1 0 0 1 1 1V10a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1zm1.5 0h3V3a1.5 1.5 0 0 0-3 0z'/%3E%3C/svg%3E") center/contain no-repeat;
+          mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 11'%3E%3Cpath d='M1.5 4.5V3a3 3 0 0 1 6 0v1.5h.5a1 1 0 0 1 1 1V10a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1zm1.5 0h3V3a1.5 1.5 0 0 0-3 0z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.stepper .val.lock::after{display:none}
+
+/* ---- editor / stats headers: clear of the fixed back arrow ------------ */
+#sAlarm,#sStats{padding-top:52px}
+.editTitle{font-size:clamp(26px,7vw,34px)}
+button.quiet.danger{color:#FF8FA3;text-decoration:none}
+
+/* ---- stats ------------------------------------------------------------ */
+.streakHero{text-align:center;margin:18px 0 22px}
+.streakNum{font-size:clamp(88px,28vw,128px);font-weight:800;letter-spacing:-.05em;line-height:.9;
+  font-variant-numeric:tabular-nums;color:var(--gold)}
+.streakLbl{color:var(--dim);font-size:16px;margin-top:8px}
+.statGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:rgba(27,37,69,.55);border:1.5px solid #2B3763;border-radius:14px;padding:14px}
+.stat b{display:block;font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat span{color:var(--dim);font-size:13px}
+.dots{display:grid;grid-template-columns:repeat(10,1fr);gap:7px;max-width:360px}
+.dots i{aspect-ratio:1;border-radius:50%;background:#1B2545}
+.dots i.won{background:var(--gold)}
+.dots i.lost{background:transparent;border:2px solid #FF8FA3}

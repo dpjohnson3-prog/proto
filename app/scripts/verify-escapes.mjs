@@ -203,13 +203,18 @@ check('the real-alarm escape hatch is still on the ring screen too',
 // trust the comment, assert it structurally: satisfaction happens in exactly
 // one place, and the back handler is not it.
 const main = fs.readFileSync(path.join(ROOT, 'src/main.js'), 'utf8');
-// One call per backend branch (alarmkit and legacy) - both still inside
-// onFinish, never anywhere else.
-check('markSatisfied is called from exactly two places',
-  (main.match(/alarm\.markSatisfied\(/g) || []).length === 2);
-const onFinishBlock = main.slice(main.indexOf('onFinish: async'), main.indexOf('wireUI();'));
-check('...and both are inside onFinish',
-  (onFinishBlock.match(/alarm\.markSatisfied\(/g) || []).length === 2);
+// v1.1: one onFinish for every alarm. Satisfaction (the per-alarm record and
+// the global v1.0 key) happens there and nowhere else.
+const onFinishBlock = main.slice(main.indexOf('onFinish: async'), main.indexOf('wireUI();', main.indexOf('onFinish: async')));
+check('markSatisfied is called from exactly one place',
+  (main.match(/alarm\.markSatisfied\(/g) || []).length === 1);
+check('...and it is inside onFinish',
+  (onFinishBlock.match(/alarm\.markSatisfied\(/g) || []).length === 1);
+// The only write outside onFinish is the one-time v1.0 migration, which
+// carries 1.0's "already done this morning" record over to the same alarm.
+check('per-alarm satisfied mornings are only written inside onFinish (plus the v1.0 migration)',
+  (main.match(/satisfied\[[^\]]+\] = /g) || []).length - (onFinishBlock.match(/satisfied\[[^\]]+\] = /g) || []).length === 1 &&
+  /satisfied\[LEGACY_ID\] = legacySat/.test(main));
 const backBlock = main.slice(main.indexOf("$('ringBack').onclick"),
   main.indexOf("$('againBtn').onclick"));
 for (const forbidden of ['markSatisfied', 'saveSatisfied', 'alarm.disarm', 'alarm.arm(', 'LocalNotifications']){
@@ -232,38 +237,35 @@ check('it names the volume', /volume/i.test(RINGER_ADVISORY));
 check('it does not claim to have checked the ringer',
   !/(your ringer is|currently (on|off)|detected)/i.test(RINGER_ADVISORY));
 const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-check('the advisory has a permanent slot on the alarm screen', idx.includes('id="ringerNote"'));
-check('it is not a dismissible toast (nothing can hide it)',
-  !/ringerNote[^\n]*(hide|dismiss|close)/i.test(main) &&
-  !/(hide|dismiss|close)[^\n]*ringerNote/i.test(main));
-check('it is shown whenever the alarm is armed',
-  /\$\('ringerNote'\)\.textContent = alarm\.RINGER_ADVISORY/.test(main));
-check('and cleared when disarmed', /\$\('ringerNote'\)\.textContent = ''/.test(main));
+// v1.1 arms through AlarmKit only, which ignores the silent switch, so the
+// ringer advisory (about the notification fallback) is no longer shown.
+check('the AlarmKit-only app no longer shows the notification ringer advisory',
+  !main.includes('RINGER_ADVISORY'));
 // Arming a silent alarm is allowed; being surprised by it is not.
-const armBlock = main.slice(main.indexOf("$('armBtn').onclick"), main.indexOf("$('testBtn').onclick"));
-check('the advisory never blocks arming', !armBlock.includes('RINGER_ADVISORY'));
-
-// Disarm must not become a bypass for push-ups: a ringing or owed morning
-// has to be refused here, not just caught upstream.
-check('Disarm refuses to run while a real ring is active',
-  /if \(activeRing && activeRing\.real\) return;/.test(armBlock));
-check('Disarm also checks the alarm\'s own owed-by-time status before cancelling',
-  /checkOwedByTime\(await findMyAlarmKitAlarm\(\)\)/.test(armBlock));
-const activeRingGuardIdx = armBlock.indexOf('activeRing.real');
-const cancelCallIdx = armBlock.indexOf('alarmKit.cancelAlarm(ALARMKIT_ID)');
-check('...and both guards run before the alarm is actually cancelled',
-  activeRingGuardIdx > -1 && cancelCallIdx > -1 && activeRingGuardIdx < cancelCallIdx);
+// Turning an alarm off (the v1.1 Disarm) and deleting it must not become a
+// bypass for push-ups: a ringing or owed morning is refused right there.
+const owedGuard = main.slice(main.indexOf('async function refuseIfOwed'), main.indexOf('async function turnOff'));
+const offBlock = main.slice(main.indexOf('async function turnOff'), main.indexOf('async function ensureAuthorized'));
+const delBlock = main.slice(main.indexOf('async function deleteDraft'), main.indexOf('async function openStats'));
+check('turning off refuses while a real ring is active',
+  /if \(activeRing && activeRing\.real\) return true;/.test(owedGuard) && offBlock.includes('refuseIfOwed('));
+check('it also checks the alarm\'s own owed-by-time status before cancelling',
+  /owedState\(a, new Date\(\), satisfied, s\)/.test(owedGuard));
+check('...and the guard runs before the alarm is actually cancelled (turn off and delete)',
+  offBlock.indexOf('refuseIfOwed(') < offBlock.indexOf('alarmKit.cancelAlarm(') &&
+  delBlock.indexOf('refuseIfOwed(') < delBlock.indexOf('alarmKit.cancelAlarm('));
 
 console.log('\n== repeat days / one-time alarms ==');
 const storage = fs.readFileSync(path.join(ROOT, 'src/storage.js'), 'utf8');
 check('repeatDays defaults to every day, for installs saved before this existed',
   /repeatDays:\s*\[0,\s*1,\s*2,\s*3,\s*4,\s*5,\s*6\]/.test(storage));
-check('scheduleAlarmKitNow uses the saved repeat days, not a hardcoded set',
-  /repeatDays: settings\.repeatDays/.test(main) &&
+check('each alarm is scheduled with its own repeat days, not a hardcoded set',
+  /repeatDays: a\.repeatDays/.test(main) &&
   !/repeatDays: \[0,\s*1,\s*2,\s*3,\s*4,\s*5,\s*6\]/.test(main));
 check('the setup screen has a day picker', idx.includes('id="repeatDays"'));
+const alarmsSrc = fs.readFileSync(path.join(ROOT, 'src/alarms.js'), 'utf8');
 check('describeRepeat treats zero days as one-time, not an error',
-  /function describeRepeat\(days\)/.test(main) && /days\.length === 0/.test(main));
+  /function describeRepeat\(days\)/.test(alarmsSrc) && /days\.length === 0/.test(alarmsSrc));
 
 // persistAndMaybeReschedule must be reachable from renderSounds() and
 // renderRepeatDays(), both sibling top-level functions, not nested inside
@@ -273,30 +275,32 @@ check('describeRepeat treats zero days as one-time, not an error',
 // rescheduled anything. Asserting it is declared before wireUI() (module
 // scope, not nested) guards against that regressing.
 const wireUIStart = main.indexOf('function wireUI(){');
-const persistDeclIdx = main.indexOf('async function persistAndMaybeReschedule(){');
-check('persistAndMaybeReschedule is declared at module scope, not nested inside wireUI',
-  persistDeclIdx > -1 && wireUIStart > -1 && persistDeclIdx < wireUIStart);
+const saveDeclIdx = main.indexOf('async function saveDraft(){');
+const schedDeclIdx = main.indexOf('async function scheduleInSystem(a){');
+check('saveDraft / scheduleInSystem are declared at module scope, not nested inside wireUI',
+  saveDeclIdx > -1 && schedDeclIdx > -1 && wireUIStart > -1 && saveDeclIdx < wireUIStart && schedDeclIdx < wireUIStart);
 
 // The bail path ("Turn off alarm anyway") and the push-up completion path
 // are the same onFinish (see the markSatisfied checks above) - this is the
 // one place a one-time alarm gets retired, whichever way the ring ended.
-const onFinishForOneTime = main.slice(main.indexOf('onFinish: async'), main.indexOf('wireUI();'));
+const onFinishForOneTime = onFinishBlock;
 check('a one-time alarm (no repeat days) is retired after it fires or is bailed on',
-  /settings\.repeatDays\.length === 0/.test(onFinishForOneTime));
-const oneTimeCancelIdx = onFinishForOneTime.indexOf('alarmKit.cancelAlarm(ALARMKIT_ID)');
-const oneTimeArmedFalseIdx = onFinishForOneTime.indexOf('settings.armed = false');
+  /a\.repeatDays\.length === 0/.test(onFinishForOneTime));
+const oneTimeCancelIdx = onFinishForOneTime.indexOf('alarmKit.cancelAlarm(a.id)');
+const oneTimeArmedFalseIdx = onFinishForOneTime.indexOf('a.enabled = false');
 check('...and cancels the system alarm BEFORE flipping armed to false, never after',
   oneTimeCancelIdx > -1 && oneTimeArmedFalseIdx > -1 && oneTimeCancelIdx < oneTimeArmedFalseIdx);
 
-check('ensureAlarmKitArmed reconciles a mismatched schedule, not just a missing one',
-  /alarmMatchesSettings\(mine\)/.test(main));
-check('...and cancels an orphaned alarm when settings say not armed',
-  /if \(!settings\.armed\)\{[\s\S]{0,500}alarmKit\.cancelAlarm\(ALARMKIT_ID\)/.test(main));
+check('reconcile() reschedules a mismatched schedule, not just a missing one',
+  /matchesSystem\(a, s\)/.test(main));
+check('...and cancels an alarm the system has but the app says is off',
+  /if \(!a\.enabled\)\{[\s\S]{0,200}alarmKit\.cancelAlarm\(a\.id\)/.test(main));
 
 check('stale legacy notifications are swept under the AlarmKit backend',
   /function sweepStaleLegacyNotifications/.test(main));
-check('...on both cold boot and every foreground return',
-  (main.match(/await sweepStaleLegacyNotifications\(\)/g) || []).length >= 2);
+check('...on both cold boot and every foreground return (via syncAndRoute)',
+  /syncAndRoute\(\)\{[\s\S]{0,300}await sweepStaleLegacyNotifications\(\)/.test(main) &&
+  (main.match(/await syncAndRoute\(\)/g) || []).length >= 2);
 
 console.log('\n== alarm sounds ==');
 check('there are 4-6 options', SOUNDS.length >= 4 && SOUNDS.length <= 6, `${SOUNDS.length}`);
@@ -401,8 +405,9 @@ check('the picker is on the alarm screen', idx.includes('id="soundChips"'));
 check('it has a preview control', idx.includes('id="soundPreview"'));
 check('the choice is persisted with the other settings',
   fs.readFileSync(path.join(ROOT, 'src/storage.js'), 'utf8').includes("sound: 'chime'"));
-check('choosing a sound re-schedules', /settings\.sound = s\.id[\s\S]{0,400}persistAndMaybeReschedule/.test(main));
-check('the ring screen plays the chosen sound too', /alarm\.soundUrl\(settings\.sound\)/.test(main));
+check('saving an enabled alarm re-schedules it in the system before saving',
+  /async function saveDraft[\s\S]{0,2200}await scheduleInSystem\(next\)[\s\S]{0,800}await saveAlarms\(alarms\)/.test(main));
+check('the ring screen plays the ringing alarm\'s own sound', /startRinging\(src\.sound\)/.test(main) && /alarm\.soundUrl\(soundId\)/.test(main));
 check('preview stops before a real ring starts', /function startRinging[\s\S]{0,120}stopPreview\(\)/.test(main));
 
 console.log('\n== continuous audio alarm ==');
@@ -454,33 +459,19 @@ check('disarming stops the monitor', /func stopEverything[\s\S]{0,120}stopMonito
 check('a completed set clears the scheduled fire time',
   /func stopAlarm[\s\S]{0,420}removeObject\(forKey: kFireAt\)/.test(swift));
 
-check('JS hands the fire time over at arm time',
-  /alarmAudio\.scheduleAlarm\(built\.first\.getTime\(\)/.test(main));
-check('...and again after a completed set and on foreground',
-  (main.match(/rescheduleNativeAlarm\(/g) || []).length >= 3);
-check('...and clears it on disarm', /alarmAudio\.clearScheduledAlarm\(\)/.test(main));
-check('coming forward adopts an alarm that started while backgrounded',
-  /st\.ringing && !counter\.isRunning\(\)/.test(main));
-check('boot checks the audio state BEFORE painting (showAlarmScreen stops rings)',
-  main.indexOf('const st = await alarmAudio.getState()') < main.lastIndexOf('if (!resumed) showAlarmScreen()'));
-
+// v1.1 arms through AlarmKit only. The notification + background-audio
+// engine (DawnAlarmAudio.swift, alarm.js - still tested above and below) is
+// only ever torn down now: once, on migration, if a pre-AlarmKit build left
+// it armed.
+const bootBlk = main.slice(main.indexOf('async function boot'));
+check('a legacy-armed install is torn down on migration',
+  /settings\.alarmBackend === 'legacy'[\s\S]{0,300}alarm\.disarm\(\)[\s\S]{0,200}alarmAudio\.stopKeepalive\(\)/.test(bootBlk));
+check('...and nothing in the app arms the legacy engine any more',
+  !/alarm\.arm\(|alarm\.topUp\(|alarmAudio\.scheduleAlarm\(|alarmAudio\.startKeepalive\(|alarmAudio\.fireAlarm\(/.test(main));
 console.log('\n-- a failed audio session is announced, not hidden --');
 check('there is an explicit audio-failure advisory',
   typeof A.AUDIO_FAILED_ADVISORY === 'string' && /NOT running/.test(A.AUDIO_FAILED_ADVISORY));
 check('it says what still works', /notifications/i.test(A.AUDIO_FAILED_ADVISORY));
-check('the armed screen has a slot for it', idx.includes('id="audioWarn"'));
-check('health is judged on session + timer + schedule together',
-  /st\.keepalive && st\.monitoring && st\.scheduledAt > 0/.test(main));
-// The legacy backend has no arm-time health recording any more - arming is
-// AlarmKit-only now (see below). Health state is instead always assigned
-// straight from the plugin's own response, never fabricated, at every point
-// it is checked: foreground return, cold boot, and the died-with-the-process
-// rebuild path.
-check('audio health state always reflects what the plugin actually reported',
-  /lastAudioState = st;/.test(main) &&
-  /lastAudioState = await alarmAudio\.startKeepalive\(\)/.test(main));
-check('the warning names which part failed',
-  /audio session not running/.test(main) && /no fire time scheduled/.test(main));
 
 console.log('\n-- the Swift must actually compile --');
 // None of this is a compiler. It catches the specific mistakes that are
@@ -590,27 +581,25 @@ check('the plugin does not resume on its own',
   !/func restoreAfterLaunch\(\)[\s\S]{0,500}fireAlarm\(/.test(swift));
 check('a stale ringing flag (older than staleMs) is cleared rather than resumed',
   /func restoreAfterLaunch\(\)[\s\S]{0,500}since[\s\S]{0,100}staleMs/.test(swift));
-check('relaunch resume goes through enterRing (which gates on satisfied)',
-  /wasRingingAtLaunch[\s\S]{0,200}enterRing\(\{ real: true/.test(main));
-check('firing is only reachable from startRinging',
-  (main.match(/alarmAudio\.fireAlarm\(/g) || []).length === 1);
+check('every real ring goes through enterRing (which gates on satisfied)',
+  (main.match(/enterRing\(\{ real: true/g) || []).length >= 3 && /alarm\.shouldRing\(/.test(main));
 // Find startRinging()'s single call site and name the function it sits in,
 // rather than guessing at a character distance.
-const callLine = main.split('\n').findIndex(l => /^\s*startRinging\(\);/.test(l));
+const callLine = main.split('\n').findIndex(l => /^\s*startRinging\([^)]*\);/.test(l));
 const enclosing = main.split('\n').slice(0, callLine + 1)
   .filter(l => /^(async )?function \w+/.test(l)).pop() || '';
 check('startRinging has exactly one call site',
-  (main.match(/^\s*startRinging\(\);/gm) || []).length === 1);
+  (main.match(/^\s*startRinging\([^)]*\);/gm) || []).length === 1);
 check('...and it is inside enterRing (so the satisfied gate always runs first)',
   /function enterRing\b/.test(enclosing), enclosing.trim().slice(0, 60));
-check('stopping is only reachable from stopRinging',
-  (main.match(/alarmAudio\.stopAlarm\(/g) || []).length === 1);
+// (primeAudio's play-then-pause is iOS audio unlocking, not a stop.)
+check('the ring sound is only stopped from stopRinging',
+  (main.match(/audio\.pause\(\)/g) || []).length - (main.match(/\.then\(\(\) => \{ audio\.pause\(\)/g) || []).length === 1 &&
+  /function stopRinging\(\)\{\n  try \{ if \(audio\)\{ audio\.pause\(\); audio\.currentTime = 0; \}/.test(main));
 check('onFinish stops the audio', /onFinish[\s\S]{0,300}stopRinging\(\)/.test(main));
 check('the test-run back arrow stops the audio too',
-  /ringBack'\)\.onclick[\s\S]{0,300}showAlarmScreen\(\)/.test(main) &&
-  /showAlarmScreen[\s\S]{0,200}stopRinging\(\)/.test(main));
-check('keepalive starts on arm and stops on disarm',
-  /alarmAudio\.startKeepalive\(\)/.test(main) && /alarmAudio\.stopKeepalive\(\)/.test(main));
+  /ringBack'\)\.onclick[\s\S]{0,300}showHome\(\)/.test(main) &&
+  /function showHome\(\)\{[\s\S]{0,120}stopRinging\(\)/.test(main));
 
 console.log('\n-- degrading safely --');
 check('every native call is wrapped so a missing plugin cannot break the app',
@@ -620,7 +609,7 @@ check('notifications are kept as a fallback, not replaced',
   /RING_BURST/.test(fs.readFileSync(path.join(ROOT, 'src/alarm.js'), 'utf8')));
 check('the force-quit limitation is stated in the UI',
   typeof FORCE_QUIT_ADVISORY === 'string' && /swipe/i.test(FORCE_QUIT_ADVISORY));
-check('...and shown on the armed state', /quitNote'\)\.textContent = alarmAudio\.isNativeAudio/.test(main));
+
 check('the ringer advisory no longer claims the silent switch wins',
   !/silent switch and the volume still win/.test(RINGER_ADVISORY));
 check('...but still warns the notification fallback obeys it',

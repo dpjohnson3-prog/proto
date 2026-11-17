@@ -64,3 +64,43 @@ export async function saveSatisfied(dayKey){
   try { await Preferences.set({ key: SAT_KEY, value: dayKey }); }
   catch (e){}
 }
+
+// ---------------------------------------------------------------------------
+// v1.1: multiple alarms, per-alarm satisfied mornings, history, UI flags.
+// ---------------------------------------------------------------------------
+async function getJSON(key, fallback){
+  try {
+    const { value } = await Preferences.get({ key });
+    return value ? JSON.parse(value) : fallback;
+  } catch (e){ return fallback; }
+}
+async function setJSON(key, v){
+  try { await Preferences.set({ key, value: JSON.stringify(v) }); } catch (e){}
+}
+
+// Whether a v1.0 settings record exists at all (loadSettings() fills in
+// defaults, so it cannot tell "never saved" from "saved the defaults").
+export async function hasSavedSettings(){
+  try { return !!(await Preferences.get({ key: KEY })).value; } catch (e){ return false; }
+}
+
+// null = never saved (first v1.1 launch -> migrate from 'dawn.alarm').
+// 'unreadable' = a record exists but could not be parsed - distinct from
+// "never saved", so a corrupt record is never mistaken for "no alarms".
+export async function loadAlarms(){
+  let raw = null;
+  try { raw = (await Preferences.get({ key: 'dawn.alarms' })).value; } catch (e){ return 'unreadable'; }
+  if (!raw) return null;
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : 'unreadable'; } catch (e){ return 'unreadable'; }
+}
+export const saveAlarms = (list) => setJSON('dawn.alarms', list);
+
+// { alarmId: 'YYYY-MM-DD' } - the morning each alarm was last satisfied.
+export const loadAlarmSatisfied = () => getJSON('dawn.satisfiedAlarms', {});
+export const saveAlarmSatisfied = (m) => setJSON('dawn.satisfiedAlarms', m);
+
+export const loadHistory = () => getJSON('dawn.history', []);
+export const saveHistory = (h) => setJSON('dawn.history', h);
+
+export async function flagSeen(name){ return !!(await getJSON('dawn.seen.' + name, false)); }
+export async function markFlag(name){ await setJSON('dawn.seen.' + name, true); }

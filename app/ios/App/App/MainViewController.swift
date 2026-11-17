@@ -24,5 +24,6 @@ class MainViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(DawnAlarmAudioPlugin())
         bridge?.registerPluginInstance(DawnAlarmKitPlugin())
+        bridge?.registerPluginInstance(DawnStorePlugin())
     }
 }

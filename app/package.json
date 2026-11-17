@@ -1,6 +1,6 @@
 {
   "name": "dawn-alarm",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,12 +12,13 @@
     "verify:port": "node scripts/verify-port.mjs",
     "port": "python3 scripts/port.py",
     "verify:safearea": "node scripts/verify-safearea.mjs",
-    "verify": "npm run verify:port && node scripts/verify-escapes.mjs && npm run verify:safearea && npm run verify:sounds",
+    "verify": "npm run verify:port && npm run verify:premium && node scripts/verify-escapes.mjs && npm run verify:safearea && npm run verify:sounds",
     "sounds": "python3 scripts/make-sounds.py && node scripts/add-ios-sounds.cjs",
     "verify:sounds": "python3 scripts/verify-sounds.py",
     "sounds:measure": "python3 scripts/analyse-sounds.py",
     "ios:signing": "node scripts/configure-ios-signing.cjs",
-    "ios:build": "./scripts/mac-build.sh"
+    "ios:build": "./scripts/mac-build.sh",
+    "verify:premium": "node scripts/verify-premium.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",
